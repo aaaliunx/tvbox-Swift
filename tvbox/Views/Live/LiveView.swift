@@ -46,6 +46,8 @@ struct LiveView: View {
     @State private var showLiveTopBar = true
     /// 直播线路全部失败时的错误提示（非空时显示，含返回按钮，不自动隐藏）。
     @State private var playbackFailureText: String?
+    /// 直播共享播放器：普通页与全屏页共用同一实例，避免同时播放产生双声音。
+    @StateObject private var livePlayerController = VLCPlayerController()
     /// 自动隐藏频道信息的定时器。
     @State private var channelInfoTimer: Timer?
     /// 频道信息自动隐藏延迟（秒）。
@@ -83,6 +85,7 @@ struct LiveView: View {
                         if let urlString = viewModel.currentChannel?.currentUrl, !urlString.isEmpty {
                             VLCLivePlayerView(
                                 urlString: urlString,
+                                sharedController: livePlayerController,
                                 activityToken: vlcInteractionToken,
                                 onPlaybackFailed: {
                                     handlePlaybackFailure(trigger: "vlc_error")
@@ -121,7 +124,8 @@ struct LiveView: View {
                 DeviceOrientation.forcePortrait()
             }) {
                 LiveFullScreenPlayerView(
-                    urlString: viewModel.currentChannel?.currentUrl ?? ""
+                    urlString: viewModel.currentChannel?.currentUrl ?? "",
+                    sharedController: livePlayerController
                 )
             }
             #endif
@@ -785,9 +789,11 @@ struct LiveView: View {
 }
 
 #if os(iOS)
-/// 直播全屏横屏播放器。
+/// 直播全屏播放器（复用直播页共享播放器，避免双声音）。
 struct LiveFullScreenPlayerView: View {
     let urlString: String
+    /// 与直播页共用的播放器实例。
+    var sharedController: VLCPlayerController? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -797,6 +803,8 @@ struct LiveFullScreenPlayerView: View {
             if !urlString.isEmpty {
                 VLCLivePlayerView(
                     urlString: urlString,
+                    sharedController: sharedController,
+                    controlsBottomInset: 20,
                     onToggleFullScreen: { dismiss() }
                 )
                 .ignoresSafeArea()
@@ -814,6 +822,7 @@ struct LiveFullScreenPlayerView: View {
                     Spacer()
                 }
                 .padding()
+                .safeAreaPadding(.top, 4)
                 Spacer()
             }
         }

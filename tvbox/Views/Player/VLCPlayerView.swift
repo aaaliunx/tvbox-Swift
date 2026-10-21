@@ -1449,12 +1449,17 @@ struct VLCVodPlayerView: View {
 
 struct VLCLivePlayerView: View {
     let urlString: String
+    /// 外部注入的共享播放器（直播页与全屏页共用同一实例，避免双声音）。
+    var sharedController: VLCPlayerController? = nil
     var activityToken: Int = 0
     var onPlaybackFailed: (() -> Void)? = nil
     var onToggleFullScreen: (() -> Void)? = nil
     /// 用户交互（单击唤出控制层、播放失败）时通知外层，用于同步唤醒页面顶部按钮。
     var onUserActivity: (() -> Void)? = nil
-    @StateObject private var controller = VLCPlayerController()
+    /// 控制栏距底部间距。直播页底部有频道信息卡（约 116pt 高），需上移避免被遮挡。
+    var controlsBottomInset: CGFloat = 130
+    @StateObject private var ownedController = VLCPlayerController()
+    private var controller: VLCPlayerController { sharedController ?? ownedController }
     private var volumeStep: Int { 10 }
     
     @State private var osdIcon: String?
@@ -1543,7 +1548,9 @@ struct VLCLivePlayerView: View {
             wakeUpControls()
         }
         .onDisappear {
-            controller.stop()
+            if sharedController == nil {
+                controller.stop()
+            }
             osdTimer?.invalidate()
             controlsTimer?.invalidate()
             hideControlsTask?.cancel()
@@ -1587,7 +1594,7 @@ struct VLCLivePlayerView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .glassCard(cornerRadius: 14)
-        .padding(.bottom, 20)
+        .padding(.bottom, controlsBottomInset)
         .padding(.horizontal, 16)
     }
     #endif
