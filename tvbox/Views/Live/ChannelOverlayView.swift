@@ -57,7 +57,6 @@ struct ChannelOverlayView: View {
                 .padding(.top, geometry.safeAreaInsets.top + 40)
             }
         }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: dragOffset)
     }
 

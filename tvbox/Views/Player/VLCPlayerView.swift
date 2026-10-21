@@ -1468,6 +1468,8 @@ struct VLCLivePlayerView: View {
     var onUserActivity: (() -> Void)? = nil
     /// 控制栏距底部间距。直播页底部有频道信息卡（约 116pt 高），需上移避免被遮挡。
     var controlsBottomInset: CGFloat = 130
+    /// 是否在视图出现时自动开始播放。全屏页复用共享播放器时应传 false，避免重复加载。
+    var autoStart: Bool = true
     @StateObject private var ownedController = VLCPlayerController()
     private var controller: VLCPlayerController { sharedController ?? ownedController }
     private var volumeStep: Int { 10 }
@@ -1547,12 +1549,16 @@ struct VLCLivePlayerView: View {
             .allowsHitTesting(false)
         }
         .onAppear {
-            startPlayback()
-            wakeUpControls()
+            if autoStart {
+                startPlayback()
+                wakeUpControls()
+            }
         }
         .onChange(of: urlString) { _, _ in
-            startPlayback()
-            wakeUpControls()
+            if autoStart {
+                startPlayback()
+                wakeUpControls()
+            }
         }
         .onChange(of: activityToken) { _, _ in
             wakeUpControls()

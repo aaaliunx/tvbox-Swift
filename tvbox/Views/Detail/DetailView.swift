@@ -650,13 +650,6 @@ struct FullScreenPlayerView: View {
                 Spacer()
             }
         }
-        #if os(iOS)
-        .onAppear {
-            DeviceOrientation.forceLandscape()
-        }
-        .onDisappear {
-            DeviceOrientation.forcePortrait()
-        }
-        #endif
+        // 全屏方向跟随系统自动旋转：转动手机画面实时横竖屏切换。
     }
 }

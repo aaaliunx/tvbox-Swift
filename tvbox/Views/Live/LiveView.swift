@@ -121,7 +121,7 @@ struct LiveView: View {
             #endif
             #if os(iOS)
             .fullScreenCover(isPresented: $showLiveFullScreen, onDismiss: {
-                DeviceOrientation.forcePortrait()
+                // 全屏跟随系统方向，退出时无需强制恢复。
             }) {
                 LiveFullScreenPlayerView(
                     urlString: viewModel.currentChannel?.currentUrl ?? "",
@@ -302,9 +302,7 @@ struct LiveView: View {
                 },
                 onDismiss: { showChannelOverlay = false }
             )
-            .presentationBackground(.clear)
-            .transition(.move(edge: .bottom))
-            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showChannelOverlay)
+            // fullScreenCover 自带转场，不叠加 transition/animation（iOS 17 下叠加会导致打开时渲染卡死）。
         }
         #endif
         #if os(macOS)
@@ -805,7 +803,8 @@ struct LiveFullScreenPlayerView: View {
                     urlString: urlString,
                     sharedController: sharedController,
                     onToggleFullScreen: { dismiss() },
-                    controlsBottomInset: 20
+                    controlsBottomInset: 20,
+                    autoStart: false
                 )
                 .ignoresSafeArea()
             }
@@ -826,12 +825,7 @@ struct LiveFullScreenPlayerView: View {
                 Spacer()
             }
         }
-        .onAppear {
-            DeviceOrientation.forceLandscape()
-        }
-        .onDisappear {
-            DeviceOrientation.forcePortrait()
-        }
+        // 全屏方向跟随系统自动旋转：手机横放即横屏、竖放即竖屏，转动画面实时跟随。
     }
 }
 #endif
