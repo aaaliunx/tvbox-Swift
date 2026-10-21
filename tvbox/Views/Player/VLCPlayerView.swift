@@ -81,6 +81,10 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
     private var currentMediaIsLive = false
     private var currentMediaDecodeMode: VideoDecodeMode = .auto
     private var currentMediaBufferMode: VLCBufferMode = .defaultMode
+    /// 当前流是否已进入过 playing 状态（用于区分"播放中抖动"与"初次加载失败"）。
+    private var hasEnteredPlayingState = false
+    /// 直播播放中 error 后的自动重连标记：每个新流最多自动重连一次。
+    private var liveAutoReconnectAttempted = false
     private var onProgressChanged: ((Double, Double?) -> Void)?
     private var onPlaybackEnded: (() -> Void)?
     private var onPlaybackFailed: (() -> Void)?
@@ -143,6 +147,9 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         let isNewMedia = currentMediaURLString != targetURLString || currentMediaIsLive != isLive
         if isNewMedia {
             resetPlaybackRecoveryState()
+            // 新流开始：重置自动重连与播放状态标记。
+            liveAutoReconnectAttempted = false
+            hasEnteredPlayingState = false
         }
         syncDecodeModeFromSettings()
         syncBufferModeFromSettings()
@@ -417,17 +424,38 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
             return
         }
         // VLCKit 3.x 没有 async stop API，同步 stop 会阻塞主线程 2-3 秒。
-        // 将其放到后台队列执行，避免 UI 卡顿。
-        nonisolated(unsafe) let player = mediaPlayer
-        DispatchQueue.global(qos: .userInitiated).async {
-            player.stop()
+       private func refreshDrawableBinding() {
+        #if os(macOS)
+        // macOS: 强制重绑视频输出，规避切全屏后偶发"有声音无画面"
+        mediaPlayer.drawable = nil
+        mediaPlayer.drawable = persistentDrawableView
+        #else
+        // iOS: 直接赋值，不置空 drawable，避免触发 state change 导致 SwiftUI dismiss 动画中断
+        mediaPlayer.drawable = persistentDrawableView
+        #endif
+        lastDrawableRebindAt = Date()
+    }
+    
+    /// 设备旋转（横竖屏互换）时强制重建视频输出。
+    /// VLCKit 的 drawable UIView 旋转时不会自动重排输出层，必须置空再赋回才会按新方向渲染。
+    func forceRebindForRotation() {
+        let now = Date()
+        guard now.timeIntervalSince(lastRotationRebindAt) > 0.6 else { return }
+        lastRotationRebindAt = now
+        guard mediaPlayer.media != nil || currentMediaURLString != nil else { return }
+        
+        // 先移除输出（画面短暂黑屏，播放与声音不中断），再赋回让 VLC 按新尺寸重建输出层。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self else { return }
+            self.mediaPlayer.drawable = nil
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self else { return }
+            self.mediaPlayer.drawable = self.persistentDrawableView
         }
     }
-
-    private func playerInstancePointer() -> UnsafeMutableRawPointer? {
-        let selector = Self.playerInstanceSelector
-        guard mediaPlayer.responds(to: selector) else { return nil }
-        typealias PlayerInstanceGetter = @convention(c) (AnyObject, Selector) -> UnsafeMutableRawPointer?
+    
+    private var lastRotationRebindAt: Date = .distantPasttanceGetter = @convention(c) (AnyObject, Selector) -> UnsafeMutableRawPointer?
         let imp = mediaPlayer.method(for: selector)
         let getter = unsafeBitCast(imp, to: PlayerInstanceGetter.self)
         return getter(mediaPlayer, selector)
@@ -522,6 +550,7 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         case .opening, .buffering:
             handleBufferingState()
         case .playing:
+            hasEnteredPlayingState = true
             handlePlayingState()
         case .paused:
             isInBufferingState = false
@@ -542,6 +571,15 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
             cancelPendingVodBufferingConfirmation()
             setPlaybackStatus(preparing: false, playing: false)
             cancelBufferingFallbackTimer()
+            if isLive, hasEnteredPlayingState, !liveAutoReconnectAttempted {
+                // 直播播放中瞬时错误：先自动重连当前流一次，避免网络抖动误切线路。
+                // 重连仍失败（第二次 error）才走 onPlaybackFailed → 自动切线路。
+                liveAutoReconnectAttempted = true
+                hasEnteredPlayingState = false
+                reconnectCurrentLiveStream()
+                return
+            }
+            liveAutoReconnectAttempted = false
             onPlaybackFailed?()
         case .stopped:
             isInBufferingState = false
@@ -552,6 +590,23 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         default:
             break
         }
+    }
+    
+    /// 重新打开当前直播流（VLC error 后重设 media 并 play）。
+    /// 仅用于"播放中瞬时错误"的自动重连；重连再次失败会走 onPlaybackFailed 切线路。
+    private func reconnectCurrentLiveStream() {
+        let media: VLCMedia?
+        if let existing = mediaPlayer.media {
+            media = existing
+        } else if let urlString = currentMediaURLString, let url = URL(string: urlString) {
+            media = VLCMedia(url: url)
+        } else {
+            onPlaybackFailed?()
+            return
+        }
+        mediaPlayer.media = nil
+        mediaPlayer.media = media
+        mediaPlayer.play()
     }
     
     private func startProgressTimer() {
@@ -1499,6 +1554,20 @@ struct VLCLivePlayerView: View {
                     .tint(.white)
             }
             
+            #if os(iOS)
+            // 手势层直接放入 ZStack 顶层（而非 overlay）：
+            // overlay 在 UIViewRepresentable 之上时手势可能被 VLC 的 UIView 吞掉，
+            // ZStack 内的 SwiftUI 视图 hit-test 优先，单击必达 toggleControls。
+            LivePlayerGestureLayer(
+                onTogglePlayPause: { togglePlaybackWithOSD() },
+                onToggleControls: { toggleControls() },
+                onVolumeChanged: { delta in
+                    let newVol = max(0, min(200, controller.volume + Int(delta * 200)))
+                    controller.setVolume(newVol)
+                }
+            )
+            #endif
+            
             if let osdIcon = osdIcon {
                 Image(systemName: osdIcon)
                     .font(.system(size: 60, weight: .semibold))
@@ -1511,16 +1580,6 @@ struct VLCLivePlayerView: View {
             }
         }
         #if os(iOS)
-        .overlay {
-            LivePlayerGestureLayer(
-                onTogglePlayPause: { togglePlaybackWithOSD() },
-                onToggleControls: { toggleControls() },
-                onVolumeChanged: { delta in
-                    let newVol = max(0, min(200, controller.volume + Int(delta * 200)))
-                    controller.setVolume(newVol)
-                }
-            )
-        }
         .overlay(alignment: .bottom) {
             liveControlsOverlay
                 .opacity(showControls ? 1.0 : 0.0)
@@ -1916,6 +1975,9 @@ private struct VLCIOSDrawableView: UIViewRepresentable {
         view.onLifecycle = { container in
             context.coordinator.controller.attachDrawable(to: container)
         }
+        view.onOrientationFlip = { _ in
+            context.coordinator.controller.forceRebindForRotation()
+        }
         view.requestLifecycleUpdate()
         return view
     }
@@ -1923,6 +1985,9 @@ private struct VLCIOSDrawableView: UIViewRepresentable {
     func updateUIView(_ uiView: VLCOutputUIView, context: Context) {
         uiView.onLifecycle = { container in
             context.coordinator.controller.attachDrawable(to: container)
+        }
+        uiView.onOrientationFlip = { _ in
+            context.coordinator.controller.forceRebindForRotation()
         }
         uiView.requestLifecycleUpdate()
     }
@@ -1935,6 +2000,9 @@ private struct VLCIOSDrawableView: UIViewRepresentable {
 
 private final class VLCOutputUIView: UIView {
     var onLifecycle: ((UIView) -> Void)?
+    /// 检测到横竖屏翻转时回调（用于强制重建 VLC 视频输出）。
+    var onOrientationFlip: ((UIView) -> Void)?
+    private var lastBoundsSize: CGSize = .zero
     
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -1948,6 +2016,17 @@ private final class VLCOutputUIView: UIView {
     
     override func layoutSubviews() {
         super.layoutSubviews()
+        let size = bounds.size
+        if size.width > 1, size.height > 1 {
+            if lastBoundsSize.width > 1, lastBoundsSize.height > 1 {
+                let wasLandscape = lastBoundsSize.width > lastBoundsSize.height
+                let nowLandscape = size.width > size.height
+                if wasLandscape != nowLandscape {
+                    onOrientationFlip?(self)
+                }
+            }
+            lastBoundsSize = size
+        }
         requestLifecycleUpdate()
     }
     
