@@ -60,6 +60,8 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
     private var lastDrawableContainerIdentifier: ObjectIdentifier?
     private var lastDrawableContainerSize: CGSize = .zero
     private var lastDrawableRebindAt: Date = .distantPast
+    /// 旋转重建输出的防抖时间戳。
+    private var lastRotationRebindAt: Date = .distantPast
     
     var hasValidDuration: Bool {
         durationSeconds > 0
@@ -424,18 +426,13 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
             return
         }
         // VLCKit 3.x 没有 async stop API，同步 stop 会阻塞主线程 2-3 秒。
-       private func refreshDrawableBinding() {
-        #if os(macOS)
-        // macOS: 强制重绑视频输出，规避切全屏后偶发"有声音无画面"
-        mediaPlayer.drawable = nil
-        mediaPlayer.drawable = persistentDrawableView
-        #else
-        // iOS: 直接赋值，不置空 drawable，避免触发 state change 导致 SwiftUI dismiss 动画中断
-        mediaPlayer.drawable = persistentDrawableView
-        #endif
-        lastDrawableRebindAt = Date()
+        // 将其放到后台队列执行，避免 UI 卡顿。
+        nonisolated(unsafe) let player = mediaPlayer
+        DispatchQueue.global(qos: .userInitiated).async {
+            player.stop()
+        }
     }
-    
+
     /// 设备旋转（横竖屏互换）时强制重建视频输出。
     /// VLCKit 的 drawable UIView 旋转时不会自动重排输出层，必须置空再赋回才会按新方向渲染。
     func forceRebindForRotation() {
@@ -454,8 +451,11 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
             self.mediaPlayer.drawable = self.persistentDrawableView
         }
     }
-    
-    private var lastRotationRebindAt: Date = .distantPasttanceGetter = @convention(c) (AnyObject, Selector) -> UnsafeMutableRawPointer?
+
+    private func playerInstancePointer() -> UnsafeMutableRawPointer? {
+        let selector = Self.playerInstanceSelector
+        guard mediaPlayer.responds(to: selector) else { return nil }
+        typealias PlayerInstanceGetter = @convention(c) (AnyObject, Selector) -> UnsafeMutableRawPointer?
         let imp = mediaPlayer.method(for: selector)
         let getter = unsafeBitCast(imp, to: PlayerInstanceGetter.self)
         return getter(mediaPlayer, selector)
