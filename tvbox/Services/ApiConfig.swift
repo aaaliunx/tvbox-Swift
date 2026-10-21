@@ -47,8 +47,8 @@ class ApiConfig: ObservableObject {
     func loadConfigs(vodApiUrl: String, liveApiUrl: String) async throws {
         let trimmedVod = vodApiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedLive = liveApiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedVod.isEmpty else {
-            throw ConfigError.parseError("点播接口地址不能为空")
+        guard !trimmedVod.isEmpty || !trimmedLive.isEmpty else {
+            throw ConfigError.parseError("点播或直播接口地址至少填写一个")
         }
         let loadToken = UUID()
         activeLoadToken = loadToken
@@ -58,6 +58,23 @@ class ApiConfig: ObservableObject {
         let resolvedLive = trimmedLive.isEmpty ? trimmedVod : trimmedLive
         self.configUrl = trimmedVod
         self.liveConfigUrl = resolvedLive
+        
+        if trimmedVod.isEmpty {
+            // 纯直播模式：仅加载直播配置（点播接口留空）。
+            let liveConfigResult = try await fetchConfig(from: resolvedLive)
+            guard activeLoadToken == loadToken else { return }
+            self.configUrl = resolvedLive
+            await parseConfig(
+                liveConfigResult.config,
+                apiUrl: liveConfigResult.loadedFrom,
+                includeSources: false,
+                includeLive: true,
+                loadToken: loadToken
+            )
+            guard activeLoadToken == loadToken else { return }
+            self.isLoaded = true
+            return
+        }
         
         if trimmedVod == resolvedLive {
             let configResult = try await fetchConfig(from: trimmedVod)
@@ -206,7 +223,64 @@ class ApiConfig: ObservableObject {
             throw ConfigError.parseError("配置缺少可用站点（sites / lives / parses）")
         }
         
+        // 非 JSON：自动识别 m3u / txt 直播源文本，直接作为直播配置加载。
+        // 支持在"直播接口地址"中直接填入 m3u/txt 播放列表 URL，无需手动包一层 JSON。
+        if isLiveSourceText(jsonStr) {
+            let autoGroups = parseLiveContent(jsonStr)
+            if !autoGroups.isEmpty {
+                let autoChannels = autoGroups.flatMap { group -> [AppConfigData.LiveConfig.LiveChannelConfig] in
+                    group.channels.map { item in
+                        AppConfigData.LiveConfig.LiveChannelConfig(
+                            name: item.channelName,
+                            urls: item.channelUrls,
+                            group: group.groupName,
+                            logo: item.logo
+                        )
+                    }
+                }
+                let autoLive = AppConfigData.LiveConfig(
+                    name: "自动识别直播源",
+                    url: nil,
+                    type: FlexibleInt(0),
+                    ua: nil,
+                    epg: nil,
+                    logo: nil,
+                    pass: nil,
+                    playerType: nil,
+                    channels: autoChannels
+                )
+                return (AppConfigData(lives: [autoLive]), normalizedUrl)
+            }
+        }
+        
         throw ConfigError.parseError("配置格式不受支持")
+    }
+    
+    /// 判断文本是否为直播源列表（m3u 或 txt 频道列表）。
+    private func isLiveSourceText(_ content: String) -> Bool {
+        let lines = content.components(separatedBy: .newlines)
+        let firstNonEmpty = lines.first {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if firstNonEmpty?.uppercased().hasPrefix("#EXTM3U") == true {
+            return true
+        }
+        if content.contains(",#genre#") || content.contains("，#genre#") {
+            return true
+        }
+        // txt 频道列表：至少 3 行 "名称,http(s)://..." 才认定。
+        var urlLineCount = 0
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard let commaIndex = trimmed.firstIndex(of: ",") else { continue }
+            let urlPart = trimmed[trimmed.index(after: commaIndex)...]
+                .trimmingCharacters(in: .whitespaces)
+            if Self.isLiveStreamUrl(urlPart) {
+                urlLineCount += 1
+                if urlLineCount >= 3 { return true }
+            }
+        }
+        return false
     }
     
     /// 读取配置文本并做短时缓存，避免“多仓探测 + 正式加载”重复请求同一地址。
