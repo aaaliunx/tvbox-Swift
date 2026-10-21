@@ -5,6 +5,9 @@ class NetworkManager {
     /// 全局共享实例。
     static let shared = NetworkManager()
     
+    /// 默认 User-Agent：与安卓 TVBox(okhttp) 一致，
+    /// 部分源站（如极狐 GitLab）会按客户端特征拦截默认的 CFNetwork UA。
+    static let defaultUserAgent = "okhttp/4.9.3"
     /// 默认最大重试次数（不含首次请求）。
     static let defaultMaxRetries = 2
     /// 重试基础延迟（秒），实际延迟 = base * 2^attempt + jitter。
@@ -66,6 +69,7 @@ class NetworkManager {
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        request.setValue(Self.defaultUserAgent, forHTTPHeaderField: "User-Agent")
         headers?.forEach { request.setValue($1, forHTTPHeaderField: $0) }
         
         let (data, httpResponse) = try await performRequest(request, maxRetries: maxRetries)
@@ -99,7 +103,8 @@ class NetworkManager {
         guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw NetworkError.invalidURL(urlString)
         }
-        let request = URLRequest(url: url)
+        var request = URLRequest(url: url)
+        request.setValue(Self.defaultUserAgent, forHTTPHeaderField: "User-Agent")
         let (data, _) = try await performRequest(request, maxRetries: maxRetries)
         return data
     }
