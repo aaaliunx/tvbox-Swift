@@ -408,7 +408,10 @@ class SourceService {
                 
                 group.addTask { [self] in
                     do {
-                        return try await self.search(sourceBean: source, keyword: keyword)
+                        // 每个源单独限时 8 秒，防止失效源（服务器挂起/无响应）拖住整个搜索。
+                        return try await withTimeout(seconds: 8) {
+                            try await self.search(sourceBean: source, keyword: keyword)
+                        }
                     } catch {
                         return []
                     }
@@ -422,6 +425,24 @@ class SourceService {
             return allResults
         }
     }
+    
+    /// 带超时的异步操作包装：超过限时抛出错误，立即返回。
+    private func withTimeout<T>(seconds: Double, _ operation: @escaping () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw SourceTimeoutError()
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next() else {
+                throw SourceTimeoutError()
+            }
+            return first
+        }
+    }
+    
+    private struct SourceTimeoutError: Error {}
     
     /// 对源返回结果做本地关键词过滤，规避部分接口返回推荐/无关内容。
     private func filterSearchResults(_ videos: [Movie.Video], keyword: String) -> [Movie.Video] {

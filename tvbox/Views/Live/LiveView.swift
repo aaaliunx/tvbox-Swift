@@ -51,7 +51,7 @@ struct LiveView: View {
     /// 自动隐藏频道信息的定时器。
     @State private var channelInfoTimer: Timer?
     /// 频道信息自动隐藏延迟（秒）。
-    private let channelInfoAutoHideDelay: TimeInterval = 3.0
+    private let channelInfoAutoHideDelay: TimeInterval = 6.0
     /// 用户交互令牌，递增后可通知 VLC 子视图重置自动隐藏逻辑。
     @State private var vlcInteractionToken = 0
     
@@ -228,6 +228,8 @@ struct LiveView: View {
                 .padding(.horizontal, 16)
                 .opacity(showLiveTopBar ? 1.0 : 0.0)
                 .animation(.easeInOut(duration: 0.25), value: showLiveTopBar)
+                // 隐藏时禁止点击，避免误触隐藏的返回/频道按钮。
+                .allowsHitTesting(showLiveTopBar)
                 
                 Spacer()
                 

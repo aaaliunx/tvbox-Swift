@@ -1617,8 +1617,9 @@ struct VLCLivePlayerView: View {
     
     // MARK: - Controls Timer
     
-    /// 单击切换控制层显示/隐藏。
+    /// 单击切换控制层显示/隐藏。无论当前状态，都同步唤醒外层顶部按钮。
     private func toggleControls() {
+        onUserActivity?()
         if showControls {
             hideControlsTask?.cancel()
             hideControlsTask = nil
