@@ -1,0 +1,49 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 确认 Scheme
+        run: |
+          xcodebuild -list -project tvbox.xcodeproj
+
+      - name: 编译 Archive（不签名）
+        run: |
+          xcodebuild archive \
+            -project tvbox.xcodeproj \
+            -scheme tvbox \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath build/tvbox.xcarchive \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: 打包未签名 IPA（标准 Payload 结构）
+        run: |
+          set -euo pipefail
+          APP_PATH="build/tvbox.xcarchive/Products/Applications/TVBox.app"
+          test -d "$APP_PATH" || { echo "未找到 TVBox.app"; exit 1; }
+          rm -rf build/ipa
+          mkdir -p build/ipa/Payload
+          cp -R "$APP_PATH" build/ipa/Payload/
+          cd build/ipa
+          zip -q -r -y ../../TVBox-unsigned.ipa Payload/
+          cd ../..
+          ls -lh TVBox-unsigned.ipa
+          unzip -l TVBox-unsigned.ipa | head -5
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tvbox-ios-unsigned
+          path: TVBox-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
