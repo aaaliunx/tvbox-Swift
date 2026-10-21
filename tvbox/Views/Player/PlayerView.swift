@@ -175,6 +175,7 @@ struct AVPlayerContentView: View {
     @State private var playbackError: String?
     @State private var showControls = true
     @State private var controlsTimer: Timer?
+    @State private var hideControlsTask: Task<Void, Never>?
     @State private var osdIcon: String?
     @State private var osdOpacity: Double = 0
     @State private var osdTimer: Timer?
@@ -247,7 +248,7 @@ struct AVPlayerContentView: View {
             PlayerGestureLayer(
                 onSeek: { offset in seek(by: offset) },
                 onTogglePlayPause: { togglePlayPauseWithOSD() },
-                onToggleControls: { wakeUpControls() },
+                onToggleControls: { toggleControls() },
                 onZoomChanged: { scale in
                     withAnimation(.easeInOut(duration: 0.2)) {
                         videoZoomScale = scale
@@ -300,6 +301,8 @@ struct AVPlayerContentView: View {
         .onDisappear {
             cleanupPlayer(keepSharedPlayer: sharedController != nil)
             controlsTimer?.invalidate()
+            hideControlsTask?.cancel()
+            hideControlsTask = nil
             osdTimer?.invalidate()
         }
     }
@@ -488,14 +491,30 @@ struct AVPlayerContentView: View {
         showOSD(icon: isPlaying ? "pause.fill" : "play.fill")
     }
     
+    /// 单击切换控制层显示/隐藏。
+    private func toggleControls() {
+        if showControls {
+            hideControlsTask?.cancel()
+            hideControlsTask = nil
+            withAnimation(.easeOut(duration: 0.3)) {
+                showControls = false
+            }
+        } else {
+            wakeUpControls()
+        }
+    }
+    
     private func wakeUpControls() {
         withAnimation { showControls = true }
-        controlsTimer?.invalidate()
-        controlsTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
+        hideControlsTask?.cancel()
+        let task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.5)) {
                 showControls = false
             }
         }
+        hideControlsTask = task
     }
     
     private func showOSD(icon: String) {

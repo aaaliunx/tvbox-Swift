@@ -852,10 +852,13 @@ struct VLCVodPlayerView: View {
     
     @State private var showControls = true
     @State private var controlsTimer: Timer?
+    @State private var hideControlsTask: Task<Void, Never>?
     @State private var osdIcon: String?
     @State private var osdOpacity: Double = 0
     @State private var osdTimer: Timer?
     @State private var startPlaybackTask: Task<Void, Never>?
+    /// VLC 点播加载超时提示（非空时显示）。
+    @State private var playbackTimeoutText: String?
     
     private var controller: VLCPlayerController {
         sharedController ?? ownedController
@@ -879,6 +882,35 @@ struct VLCVodPlayerView: View {
                     .tint(.white)
             }
             
+            if let playbackTimeoutText = playbackTimeoutText {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 32))
+                        .foregroundColor(.orange)
+                    Text(playbackTimeoutText)
+                        .font(.subheadline)
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                    Button {
+                        self.playbackTimeoutText = nil
+                    } label: {
+                        Text("知道了")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.18))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(20)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .padding(24)
+            }
+            
             if let osdIcon = osdIcon {
                 Image(systemName: osdIcon)
                     .font(.system(size: 60, weight: .semibold))
@@ -895,7 +927,7 @@ struct VLCVodPlayerView: View {
             PlayerGestureLayer(
                 onSeek: { offset in controller.seek(by: offset) },
                 onTogglePlayPause: { togglePlaybackWithOSD() },
-                onToggleControls: { wakeUpControls() },
+                onToggleControls: { toggleControls() },
                 onZoomChanged: { _ in },
                 currentTime: controller.currentTimeSeconds,
                 duration: controller.durationSeconds
@@ -962,18 +994,36 @@ struct VLCVodPlayerView: View {
                 controller.stop()
             }
             controlsTimer?.invalidate()
+            hideControlsTask?.cancel()
+            hideControlsTask = nil
             osdTimer?.invalidate()
+        }
+    }
+    
+    /// 单击切换控制层显示/隐藏。
+    private func toggleControls() {
+        if showControls {
+            hideControlsTask?.cancel()
+            hideControlsTask = nil
+            withAnimation(.easeOut(duration: 0.3)) {
+                showControls = false
+            }
+        } else {
+            wakeUpControls()
         }
     }
     
     private func wakeUpControls() {
         withAnimation { showControls = true }
-        controlsTimer?.invalidate()
-        controlsTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
+        hideControlsTask?.cancel()
+        let task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.5)) {
                 showControls = false
             }
         }
+        hideControlsTask = task
     }
     
     private func showOSD(icon: String) {
@@ -999,6 +1049,7 @@ struct VLCVodPlayerView: View {
         }
         let targetStartPosition = max(startPosition, 0)
         draggingSeconds = targetStartPosition
+        playbackTimeoutText = nil
         startPlaybackTask?.cancel()
         startPlaybackTask = Task { @MainActor in
             // 先让出一个主线程周期，避免点击瞬间布局与播放器初始化竞争。
@@ -1012,6 +1063,12 @@ struct VLCVodPlayerView: View {
                 onPlaybackEnded: onPlaybackEnded,
                 onPlaybackFailed: nil
             )
+            // 超时保护：12 秒仍未开始播放则给出明确提示，避免黑屏无反馈。
+            try? await Task.sleep(nanoseconds: 12_000_000_000)
+            guard !Task.isCancelled else { return }
+            if controller.isPreparing || !controller.isPlaying {
+                playbackTimeoutText = "加载超时：该视频源可能无法用 VLC 播放器播放，可在设置中切换到系统播放器重试"
+            }
         }
     }
     
@@ -1395,6 +1452,8 @@ struct VLCLivePlayerView: View {
     var activityToken: Int = 0
     var onPlaybackFailed: (() -> Void)? = nil
     var onToggleFullScreen: (() -> Void)? = nil
+    /// 用户交互（单击唤出控制层、播放失败）时通知外层，用于同步唤醒页面顶部按钮。
+    var onUserActivity: (() -> Void)? = nil
     @StateObject private var controller = VLCPlayerController()
     private var volumeStep: Int { 10 }
     
@@ -1403,6 +1462,7 @@ struct VLCLivePlayerView: View {
     @State private var osdTimer: Timer?
     @State private var showControls = true
     @State private var controlsTimer: Timer?
+    @State private var hideControlsTask: Task<Void, Never>?
     
     var body: some View {
         ZStack {
@@ -1437,7 +1497,7 @@ struct VLCLivePlayerView: View {
         .overlay {
             LivePlayerGestureLayer(
                 onTogglePlayPause: { togglePlaybackWithOSD() },
-                onToggleControls: { wakeUpControls() },
+                onToggleControls: { toggleControls() },
                 onVolumeChanged: { delta in
                     let newVol = max(0, min(200, controller.volume + Int(delta * 200)))
                     controller.setVolume(newVol)
@@ -1486,6 +1546,8 @@ struct VLCLivePlayerView: View {
             controller.stop()
             osdTimer?.invalidate()
             controlsTimer?.invalidate()
+            hideControlsTask?.cancel()
+            hideControlsTask = nil
         }
     }
     
@@ -1507,6 +1569,20 @@ struct VLCLivePlayerView: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
+            
+            // 全屏按钮
+            Button {
+                wakeUpControls()
+                onToggleFullScreen?()
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 48, height: 48)
+                    .background(Color.white.opacity(0.15))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -1518,14 +1594,31 @@ struct VLCLivePlayerView: View {
     
     // MARK: - Controls Timer
     
+    /// 单击切换控制层显示/隐藏。
+    private func toggleControls() {
+        if showControls {
+            hideControlsTask?.cancel()
+            hideControlsTask = nil
+            withAnimation(.easeOut(duration: 0.3)) {
+                showControls = false
+            }
+        } else {
+            wakeUpControls()
+        }
+    }
+    
     private func wakeUpControls() {
+        onUserActivity?()
         withAnimation { showControls = true }
-        controlsTimer?.invalidate()
-        controlsTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: false) { _ in
+        hideControlsTask?.cancel()
+        let task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.5)) {
                 showControls = false
             }
         }
+        hideControlsTask = task
     }
     
     private func showOSD(icon: String) {
@@ -1547,6 +1640,7 @@ struct VLCLivePlayerView: View {
     private func startPlayback() {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed) ?? trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed).flatMap({ URL(string: $0) }) else {
+            onUserActivity?()
             onPlaybackFailed?()
             return
         }
@@ -1556,7 +1650,10 @@ struct VLCLivePlayerView: View {
             isLive: true,
             onProgressChanged: nil,
             onPlaybackEnded: nil,
-            onPlaybackFailed: onPlaybackFailed
+            onPlaybackFailed: {
+                onUserActivity?()
+                onPlaybackFailed?()
+            }
         )
     }
 }

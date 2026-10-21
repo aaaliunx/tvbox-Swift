@@ -650,5 +650,13 @@ struct FullScreenPlayerView: View {
                 Spacer()
             }
         }
+        #if os(iOS)
+        .onAppear {
+            DeviceOrientation.forceLandscape()
+        }
+        .onDisappear {
+            DeviceOrientation.forcePortrait()
+        }
+        #endif
     }
 }

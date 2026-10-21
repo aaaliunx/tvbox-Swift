@@ -23,6 +23,8 @@ struct LiveView: View {
     #if os(iOS)
     /// iOS 全屏频道覆盖层是否显示。
     @State private var showChannelOverlay = false
+    /// iOS 直播全屏横屏播放是否显示。
+    @State private var showLiveFullScreen = false
     #endif
     /// 当前窗口是否处于全屏。
     @State private var isWindowFullScreen = false
@@ -40,6 +42,10 @@ struct LiveView: View {
     @State private var trackedChannelId: String = ""
     /// 底部频道信息是否显示。
     @State private var showCurrentChannelInfo = true
+    /// 顶部返回/频道按钮是否显示（与频道信息卡联动自动隐藏）。
+    @State private var showLiveTopBar = true
+    /// 直播线路全部失败时的错误提示（非空时显示，含返回按钮，不自动隐藏）。
+    @State private var playbackFailureText: String?
     /// 自动隐藏频道信息的定时器。
     @State private var channelInfoTimer: Timer?
     /// 频道信息自动隐藏延迟（秒）。
@@ -83,6 +89,9 @@ struct LiveView: View {
                                 },
                                 onToggleFullScreen: {
                                     toggleWindowFullScreen()
+                                },
+                                onUserActivity: {
+                                    reportUserActivity()
                                 }
                             )
                             .ignoresSafeArea()
@@ -107,6 +116,15 @@ struct LiveView: View {
             .toolbar(.hidden, for: .navigationBar)
             .toolbar(.hidden, for: .tabBar)
             #endif
+            #if os(iOS)
+            .fullScreenCover(isPresented: $showLiveFullScreen, onDismiss: {
+                DeviceOrientation.forcePortrait()
+            }) {
+                LiveFullScreenPlayerView(
+                    urlString: viewModel.currentChannel?.currentUrl ?? ""
+                )
+            }
+            #endif
             .onAppear {
                 // 首次进入时加载频道并展示频道信息卡。
                 viewModel.loadChannels()
@@ -123,6 +141,7 @@ struct LiveView: View {
             .onChange(of: viewModel.currentChannel?.id) { _, _ in
                 // 切台后清空失败线路记录，避免复用上个频道的失败状态。
                 resetFailureTracking(for: viewModel.currentChannel)
+                playbackFailureText = nil
                 wakeUpCurrentChannelInfo()
             }
             .onChange(of: selectedEngine) { _, _ in
@@ -135,6 +154,7 @@ struct LiveView: View {
             .onDisappear {
                 cleanupPlayer()
                 cancelChannelInfoAutoHide()
+                playbackFailureText = nil
                 #if os(macOS)
                 appState.exitPlayerFullScreen()
                 isWindowFullScreen = false
@@ -202,8 +222,41 @@ struct LiveView: View {
                 }
                 .padding(.top, 18)
                 .padding(.horizontal, 16)
+                .opacity(showLiveTopBar ? 1.0 : 0.0)
+                .animation(.easeInOut(duration: 0.25), value: showLiveTopBar)
                 
                 Spacer()
+                
+                // 线路全部失败提示（含返回按钮，不自动隐藏）
+                if let failureText = playbackFailureText {
+                    HStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(failureText)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white)
+                        Spacer()
+                        #if os(iOS)
+                        Button {
+                            onExit?()
+                        } label: {
+                            Text("返回")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(Color.white.opacity(0.18))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        #endif
+                    }
+                    .padding(14)
+                    .glassCard(cornerRadius: 12)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 
                 // 底部当前频道信息
                 if let channel = viewModel.currentChannel, showCurrentChannelInfo {
@@ -498,6 +551,7 @@ struct LiveView: View {
     private func wakeUpCurrentChannelInfo() {
         withAnimation(.easeInOut(duration: 0.2)) {
             showCurrentChannelInfo = true
+            showLiveTopBar = true
         }
         channelInfoTimer?.invalidate()
         guard viewModel.currentChannel != nil else { return }
@@ -505,6 +559,7 @@ struct LiveView: View {
         channelInfoTimer = Timer.scheduledTimer(withTimeInterval: channelInfoAutoHideDelay, repeats: false) { _ in
             withAnimation(.easeOut(duration: 0.3)) {
                 showCurrentChannelInfo = false
+                showLiveTopBar = false
             }
         }
     }
@@ -668,7 +723,16 @@ struct LiveView: View {
     
     private func handlePlaybackFailure(trigger: String) {
         guard let channel = viewModel.currentChannel else { return }
-        guard channel.sourceNum > 1 else { return }
+        // 播放出错时强制唤出顶部返回/频道按钮，避免用户找不到出口。
+        wakeUpCurrentChannelInfo()
+        showLiveTopBar = true
+        cancelChannelInfoAutoHide()
+        
+        guard channel.sourceNum > 1 else {
+            // 单线路频道失败：直接给出错误提示。
+            playbackFailureText = "直播源无法播放，请检查线路或稍后重试"
+            return
+        }
         
         if trackedChannelId != channel.id {
             resetFailureTracking(for: channel)
@@ -680,8 +744,11 @@ struct LiveView: View {
         
         guard switchToNextAvailableSource(totalSources: channel.sourceNum) else {
             print("直播线路全部尝试失败: channel=\(channel.channelName), trigger=\(trigger)")
+            playbackFailureText = "全部线路均无法播放，请稍后重试或返回"
             return
         }
+        // 自动切到新线路成功，清除旧错误提示。
+        playbackFailureText = nil
     }
     
     private func switchToNextAvailableSource(totalSources: Int) -> Bool {
@@ -710,6 +777,52 @@ struct LiveView: View {
         window.toggleFullScreen(nil)
     }
     #else
-    private func toggleWindowFullScreen() {}
+    private func toggleWindowFullScreen() {
+        // iOS：打开全屏横屏播放。
+        showLiveFullScreen = true
+    }
     #endif
 }
+
+#if os(iOS)
+/// 直播全屏横屏播放器。
+struct LiveFullScreenPlayerView: View {
+    let urlString: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if !urlString.isEmpty {
+                VLCLivePlayerView(
+                    urlString: urlString,
+                    onToggleFullScreen: { dismiss() }
+                )
+                .ignoresSafeArea()
+            }
+
+            VStack {
+                HStack {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    Spacer()
+                }
+                .padding()
+                Spacer()
+            }
+        }
+        .onAppear {
+            DeviceOrientation.forceLandscape()
+        }
+        .onDisappear {
+            DeviceOrientation.forcePortrait()
+        }
+    }
+}
+#endif
