@@ -13,8 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 确认 Scheme
+      - name: 用 xcodegen 重新生成工程（包含新增源文件）
         run: |
+          brew install xcodegen
+          xcodegen generate
           xcodebuild -list -project tvbox.xcodeproj
 
       - name: 编译 Archive（不签名）
