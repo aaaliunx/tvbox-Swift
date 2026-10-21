@@ -177,7 +177,17 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         setPlaybackStatus(preparing: true, playing: false)
         resetProgressState()
         
-        mediaPlayer.stop()
+        // 关键：切流时销毁旧播放器实例并在后台释放，随后创建全新实例。
+        // 禁止调用同步 stop() —— VLCKit 的 stop 会 dispatch_sync 回主线程，
+        // 遇到慢源/失效源（如 115.205.x.x 直播流）会阻塞主线程导致界面卡死。
+        if let oldPlayer = _mediaPlayer {
+            oldPlayer.audio?.volume = 0
+            oldPlayer.delegate = nil
+            _mediaPlayer = nil
+            nonisolated(unsafe) let p = oldPlayer
+            DispatchQueue.global(qos: .utility).async { _ = p }
+        }
+        // mediaPlayer 计算属性此时会创建全新实例（delegate/drawable 已绑定）。
         let media = VLCMedia(url: url)
         
         let cacheConfig = Self.cacheConfig(isLive: isLive, bufferMode: bufferMode)
