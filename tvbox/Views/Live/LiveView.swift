@@ -804,8 +804,8 @@ struct LiveFullScreenPlayerView: View {
                 VLCLivePlayerView(
                     urlString: urlString,
                     sharedController: sharedController,
-                    controlsBottomInset: 20,
-                    onToggleFullScreen: { dismiss() }
+                    onToggleFullScreen: { dismiss() },
+                    controlsBottomInset: 20
                 )
                 .ignoresSafeArea()
             }
