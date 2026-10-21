@@ -16,6 +16,13 @@ jobs:
       - name: 用 xcodegen 重新生成工程（包含新增源文件）
         run: |
           brew install xcodegen
+          # xcodegen 2.46 生成 Xcode16(77) 格式，需用 Xcode 16 打开
+          XCODE16=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | head -1)
+          if [ -n "$XCODE16" ]; then
+            echo "切换到: $XCODE16"
+            sudo xcode-select -s "$XCODE16"
+          fi
+          xcodebuild -version
           xcodegen generate
           xcodebuild -list -project tvbox.xcodeproj
 
