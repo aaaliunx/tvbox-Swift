@@ -72,9 +72,10 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
 import MediaPlayer
 
 /// 全屏页手势层：水平滑动快进/快退、左侧垂直滑动调亮度、右侧垂直滑动调音量、
-/// 单击唤出悬浮按钮、长按画面倍速播放（松手恢复）。
+/// 单击唤出悬浮按钮、长按画面 2 倍速（松手恢复）。
 /// 采用单个自管理 DragGesture：位移 >12pt 立即进入拖动模式（绝不再触发长按倍速），
-/// 静止按住 0.7s 触发倍速，短按松手视为点击。仅在悬浮按钮隐藏时叠加。
+/// 按压后启动 Timer，静止 0.7s 触发倍速（手指轻微抖动不影响），短按松手视为点击。
+/// 仅在悬浮按钮隐藏时叠加，避免遮挡播放器控制条。
 struct FullScreenGestureLayer: View {
     let onBrightness: (CGSize) -> Void
     let onVolume: (CGSize) -> Void
@@ -88,6 +89,7 @@ struct FullScreenGestureLayer: View {
     @State private var pressStartTime: Date?
     @State private var dragStartX: CGFloat = 0
     @State private var isSpeedActive = false
+    @State private var longPressTimer: Timer?
 
     var body: some View {
         GeometryReader { geometry in
@@ -99,20 +101,20 @@ struct FullScreenGestureLayer: View {
                             if pressStartTime == nil {
                                 pressStartTime = Date()
                                 dragStartX = value.startLocation.x
+                                startLongPressTimer()
                             }
-                            let elapsed = Date().timeIntervalSince(pressStartTime ?? Date())
                             let absW = abs(value.translation.width)
                             let absH = abs(value.translation.height)
                             let moved = max(absW, absH)
 
                             if isSpeedActive {
-                                // 长按倍速已激活：保持倍速，松手在 onEnded 恢复。
+                                // 倍速已激活：保持，松手在 onEnded 恢复。
                                 return
                             }
 
                             if moved > 12 {
-                                // 进入拖动模式（此后不再触发长按倍速）。
-                                pressStartTime = nil
+                                // 进入拖动模式：取消长按，之后不再触发倍速。
+                                cancelLongPressTimer()
                                 if absW > absH {
                                     if let onSeek {
                                         let offset = Double(value.translation.width / geometry.size.width) * 180.0
@@ -125,20 +127,18 @@ struct FullScreenGestureLayer: View {
                                         onVolume(value.translation)
                                     }
                                 }
-                            } else if elapsed > 0.7 {
-                                // 静止按住 0.7s：倍速开始。
-                                isSpeedActive = true
-                                onLongPressBegan()
                             }
+                            // 静止或微动（<12pt）：等待 Timer 判定长按。
                         }
                         .onEnded { value in
+                            cancelLongPressTimer()
                             if isSpeedActive {
                                 isSpeedActive = false
                                 onLongPressEnded()
                             } else if let start = pressStartTime {
                                 let elapsed = Date().timeIntervalSince(start)
                                 let moved = max(abs(value.translation.width), abs(value.translation.height))
-                                if elapsed < 0.7 && moved < 12 {
+                                if elapsed < 0.6 && moved < 12 {
                                     // 短按：唤出按钮。
                                     onTap()
                                 }
@@ -148,6 +148,25 @@ struct FullScreenGestureLayer: View {
                         }
                 )
         }
+    }
+
+    /// 按压后启动 0.7s 长按判定：期间未进入拖动模式即触发倍速。
+    /// 用 Timer 而不是等待 onChanged，解决手指静止时不再回调导致倍速不触发的问题。
+    private func startLongPressTimer() {
+        longPressTimer?.invalidate()
+        longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: false) { _ in
+            Task { @MainActor in
+                if !isSpeedActive {
+                    isSpeedActive = true
+                    onLongPressBegan()
+                }
+            }
+        }
+    }
+
+    private func cancelLongPressTimer() {
+        longPressTimer?.invalidate()
+        longPressTimer = nil
     }
 }
 

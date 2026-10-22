@@ -771,8 +771,10 @@ struct FullScreenPlayerView: View {
             }
             #endif
 
-            // 悬浮按钮（自动隐藏，单击唤出）：播放/暂停 + 左右翻转 + 退出全屏
+            // 悬浮按钮（自动隐藏，单击唤出）：播放/暂停 + 左右翻转 + 退出全屏。
+            // 位于底部播放器控制栏区域（集成到控制栏，非顶部悬浮）。
             VStack {
+                Spacer()
                 HStack(spacing: 16) {
                     #if os(iOS)
                     // 播放/暂停（系统引擎）
@@ -812,14 +814,15 @@ struct FullScreenPlayerView: View {
                             .foregroundColor(.white.opacity(0.8))
                     }
                 }
-                .padding()
-                .background(Color.black.opacity(0.35), in: Capsule())
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(Color.black.opacity(0.45), in: Capsule())
                 .opacity(controlsVisible ? 1 : 0)
                 .animation(.easeInOut(duration: 0.25), value: controlsVisible)
-                Spacer()
+                .padding(.bottom, 16)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .padding(.top, 4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .padding(.trailing, 16)
             .allowsHitTesting(controlsVisible)
         }
         .ignoresSafeArea()
@@ -900,30 +903,23 @@ struct FullScreenPlayerView: View {
         isFullScreenPlaying = player.timeControlStatus == .playing
     }
 
-    /// 长按倍速：2x 起步，按住每 0.9s 提升一档，最高 3x。
+    /// 长按画面倍速：固定 2.0x，松手恢复原速。
     private func beginLongPressSpeed(player: AVPlayer?) {
         guard let player else { return }
+        longPressSpeedTask?.cancel()
+        longPressSpeedTask = nil
         longPressSpeed = 2.0
         player.rate = 2.0
         showOSD("倍速 2.0x")
-        longPressSpeedTask?.cancel()
-        let task = Task { @MainActor in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 900_000_000)
-                guard !Task.isCancelled else { return }
-                longPressSpeed = min(longPressSpeed + 1.0, 3.0)
-                player.rate = longPressSpeed
-                showOSD("倍速 \(String(format: "%.0f", longPressSpeed))x")
-            }
-        }
-        longPressSpeedTask = task
     }
 
     private func endLongPressSpeed(player: AVPlayer?) {
         longPressSpeedTask?.cancel()
         longPressSpeedTask = nil
         guard let player else { return }
-        player.rate = player.defaultRate
+        if player.rate != player.defaultRate {
+            player.rate = player.defaultRate
+        }
         isFullScreenPlaying = player.timeControlStatus == .playing
     }
 
