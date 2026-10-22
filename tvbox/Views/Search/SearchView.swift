@@ -23,14 +23,15 @@ struct SearchView: View {
                 // 搜索栏
                 searchBar
                 
-                // 内容
-                if viewModel.isSearching {
+                // 内容：优先显示已搜出的结果（边搜边显示），
+                // 无任何结果时才显示转圈/历史/错误提示。
+                if !viewModel.results.isEmpty {
+                    searchResults
+                } else if viewModel.isSearching {
                     Spacer()
                     ProgressView("搜索中...")
                         .tint(.orange)
                     Spacer()
-                } else if !viewModel.results.isEmpty {
-                    searchResults
                 } else if viewModel.keyword.isEmpty {
                     // 输入为空时显示历史；输入非空但无结果时显示提示文案。
                     searchHistorySection
@@ -122,6 +123,23 @@ struct SearchView: View {
     /// 搜索结果网格。
     private var searchResults: some View {
         ScrollView {
+            // 搜索仍在进行时显示轻量提示（结果已开始逐个出现）。
+            if viewModel.isSearching {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.orange)
+                    Text("正在搜索更多源…")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text("已出 \(viewModel.results.count) 个结果")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+            }
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(viewModel.results) { item in
                     NavigationLink(value: item.video) {
