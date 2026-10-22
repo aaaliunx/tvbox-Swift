@@ -141,11 +141,13 @@ struct LiveView: View {
             #endif
             #if os(iOS)
             .fullScreenCover(isPresented: $showLiveFullScreen, onDismiss: {
-                // 全屏跟随系统方向，退出时无需强制恢复。
+                // 全屏内容自旋转，不依赖系统方向。
             }) {
                 LiveFullScreenPlayerView(
                     urlString: viewModel.currentChannel?.currentUrl ?? "",
-                    sharedController: livePlayerController
+                    sharedController: livePlayerController,
+                    systemPlayer: avPlayer,
+                    useSystemEngine: selectedEngine == .system
                 )
             }
             #endif
@@ -829,55 +831,73 @@ struct LiveView: View {
 }
 
 #if os(iOS)
-/// 直播全屏播放器（复用直播页共享播放器，避免双声音）。
+/// 直播全屏播放器（复用直播页共享播放器，避免双声音；支持系统/VLC 双引擎）。
 struct LiveFullScreenPlayerView: View {
     let urlString: String
-    /// 与直播页共用的播放器实例。
+    /// 与直播页共用的 VLC 播放器实例。
     var sharedController: VLCPlayerController? = nil
+    /// 系统播放器引擎时使用的 AVPlayer 实例（与直播页共用，不重新加载）。
+    var systemPlayer: AVPlayer? = nil
+    /// 当前直播引擎（系统播放器 or VLC）。
+    var useSystemEngine: Bool = false
     @Environment(\.dismiss) private var dismiss
+    /// 全屏内容旋转角度：90=横屏左，-90=横屏右（与系统方向锁定无关）。
+    @State private var landscapeRotation: Double = 90
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        GeometryReader { geo in
+            let screenW = geo.size.width
+            let screenH = geo.size.height
+            ZStack {
+                Color.black
 
-            if !urlString.isEmpty {
-                VLCLivePlayerView(
-                    urlString: urlString,
-                    sharedController: sharedController,
-                    onToggleFullScreen: { dismiss() },
-                    controlsBottomInset: 20,
-                    autoStart: false
-                )
-                .ignoresSafeArea()
-            }
-
-            VStack {
-                HStack {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.white.opacity(0.8))
+                VStack(spacing: 0) {
+                    if useSystemEngine {
+                        if let systemPlayer {
+                            PlatformVideoPlayer(player: systemPlayer)
+                                .ignoresSafeArea()
+                        }
+                    } else if !urlString.isEmpty {
+                        VLCLivePlayerView(
+                            urlString: urlString,
+                            sharedController: sharedController,
+                            onToggleFullScreen: { dismiss() },
+                            controlsBottomInset: 20,
+                            autoStart: false
+                        )
+                        .ignoresSafeArea()
                     }
-                    Spacer()
                 }
-                .padding()
-                .safeAreaPadding(.top, 4)
-                Spacer()
+                .rotationEffect(.degrees(landscapeRotation))
+                .frame(
+                    width: landscapeRotation != 0 ? screenH : screenW,
+                    height: landscapeRotation != 0 ? screenW : screenH
+                )
+                .overlay(alignment: .topTrailing) {
+                    HStack(spacing: 16) {
+                        // 左右翻转横屏
+                        Button {
+                            landscapeRotation = (landscapeRotation == 90 ? -90 : 90)
+                        } label: {
+                            Image(systemName: "rectangle.landscape.rotate")
+                                .font(.title3)
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                        // 退出全屏
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                    }
+                    .padding()
+                }
             }
         }
-        // 进入全屏强制横屏（即使系统"自动旋转"关闭也能横屏观看）；
-        // 若用户开启自动旋转，之后转动手机画面实时跟随（requestGeometryUpdate 仅请求一次，不锁定后续方向）。
-        // 延迟到 cover 呈现动画完成后请求，避免动画期间方向请求被忽略。
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                DeviceOrientation.forceLandscape()
-            }
-        }
-        .onDisappear {
-            DeviceOrientation.forcePortrait()
-        }
+        .ignoresSafeArea()
+        .statusBarHidden(true)
     }
 }
 #endif

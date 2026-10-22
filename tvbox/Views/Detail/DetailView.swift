@@ -687,63 +687,78 @@ struct FullScreenPlayerView: View {
     var vlcController: VLCPlayerController? = nil
     var onCloseRequested: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
-    
+    /// 全屏内容旋转角度：90=横屏左，-90=横屏右。
+    /// 采用"内容自旋转"方案：与系统方向锁定完全无关，
+    /// 锁定方向时同样生效，且不依赖 iOS 方向请求 API。
+    #if os(macOS)
+    @State private var landscapeRotation: Double = 0
+    #else
+    @State private var landscapeRotation: Double = 90
+    #endif
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            
-            PlayerView(
-                urlString: urlString,
-                startPosition: startPosition,
-                onProgressChanged: onProgressChanged,
-                onPlaybackEnded: onPlaybackEnded,
-                onToggleFullScreen: {
-                    if let onCloseRequested {
-                        onCloseRequested()
-                    } else {
-                        dismiss()
-                    }
-                },
-                canPlayNext: canPlayNext,
-                onPlayNext: onPlayNext,
-                systemController: systemController,
-                vlcController: vlcController
-            )
-                .ignoresSafeArea()
-            
-            VStack {
-                HStack {
-                    Button {
-                        if let onCloseRequested {
-                            onCloseRequested()
-                        } else {
-                            dismiss()
-                        }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-                    Spacer()
+        GeometryReader { geo in
+            let screenW = geo.size.width
+            let screenH = geo.size.height
+            ZStack {
+                Color.black
+                
+                VStack(spacing: 0) {
+                    PlayerView(
+                        urlString: urlString,
+                        startPosition: startPosition,
+                        onProgressChanged: onProgressChanged,
+                        onPlaybackEnded: onPlaybackEnded,
+                        onToggleFullScreen: {
+                            if let onCloseRequested {
+                                onCloseRequested()
+                            } else {
+                                dismiss()
+                            }
+                        },
+                        canPlayNext: canPlayNext,
+                        onPlayNext: onPlayNext,
+                        systemController: systemController,
+                        vlcController: vlcController
+                    )
+                    .ignoresSafeArea()
                 }
-                .padding()
-                Spacer()
+                .rotationEffect(.degrees(landscapeRotation))
+                .frame(
+                    width: landscapeRotation != 0 ? screenH : screenW,
+                    height: landscapeRotation != 0 ? screenW : screenH
+                )
+                .overlay(alignment: .topTrailing) {
+                    HStack(spacing: 16) {
+                        #if os(iOS)
+                        // 左右翻转横屏
+                        Button {
+                            landscapeRotation = (landscapeRotation == 90 ? -90 : 90)
+                        } label: {
+                            Image(systemName: "rectangle.landscape.rotate")
+                                .font(.title3)
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                        #endif
+                        // 退出全屏
+                        Button {
+                            if let onCloseRequested {
+                                onCloseRequested()
+                            } else {
+                                dismiss()
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                    }
+                    .padding()
+                }
             }
         }
-        // 进入全屏强制横屏（即使系统"自动旋转"关闭也能横屏观看）；
-        // 若用户开启自动旋转，之后转动手机画面实时跟随。
-        // 延迟到 cover 呈现动画完成后请求，避免动画期间方向请求被忽略。
-        .onAppear {
-            #if os(iOS)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                DeviceOrientation.forceLandscape()
-            }
-            #endif
-        }
-        .onDisappear {
-            #if os(iOS)
-            DeviceOrientation.forcePortrait()
-            #endif
-        }
+        .ignoresSafeArea()
+        #if os(iOS)
+        .statusBarHidden(true)
+        #endif
     }
 }
