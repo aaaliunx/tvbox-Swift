@@ -121,6 +121,13 @@ struct LiveView: View {
                             viewModel.switchSource()
                             if viewModel.currentChannel?.sourceIndex == target { break }
                         }
+                    },
+                    channelNames: viewModel.currentChannels.map { $0.channelName },
+                    selectedChannelIndex: viewModel.currentChannels.firstIndex(where: { $0.id == viewModel.currentChannel?.id }) ?? 0,
+                    onSelectChannel: { index in
+                        let channels = viewModel.currentChannels
+                        guard index >= 0, index < channels.count else { return }
+                        viewModel.selectChannel(channels[index])
                     }
                 )
             }
@@ -979,6 +986,10 @@ struct LiveFullScreenPlayerView: View {
     var sourceNum: Int = 0
     var sourceIndex: Int = 0
     var onSelectSource: ((Int) -> Void)? = nil
+    /// 当前频道组的频道名称列表（用于控制栏"频道"面板）。
+    var channelNames: [String] = []
+    var selectedChannelIndex: Int = 0
+    var onSelectChannel: ((Int) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     /// 左右横屏方向标记（旋转按钮切换 landscapeLeft/Right）。
     @State private var isLandscapeLeft = false
@@ -1014,7 +1025,10 @@ struct LiveFullScreenPlayerView: View {
                             onLongPressEnded: { endLiveLongPressSpeed() },
                             sourceNames: (0..<max(sourceNum, 1)).map { "线路\($0 + 1)" },
                             selectedSourceIndex: min(max(sourceIndex, 0), max(sourceNum - 1, 0)),
-                            onSelectSource: { index in onSelectSource?(index) }
+                            onSelectSource: { index in onSelectSource?(index) },
+                            channelNames: channelNames,
+                            selectedChannelIndex: selectedChannelIndex,
+                            onSelectChannel: { index in onSelectChannel?(index) }
                         )
                         .ignoresSafeArea()
                     }

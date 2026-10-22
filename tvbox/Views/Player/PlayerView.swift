@@ -255,6 +255,10 @@ struct TencentStylePlayerOverlay: View {
     var episodeNames: [String] = []
     var selectedEpisodeIndex: Int = 0
     var onSelectEpisode: ((Int) -> Void)? = nil
+    /// 直播频道名称列表；为空时不显示"频道"按钮。
+    var channelNames: [String] = []
+    var selectedChannelIndex: Int = 0
+    var onSelectChannel: ((Int) -> Void)? = nil
 
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -266,6 +270,7 @@ struct TencentStylePlayerOverlay: View {
     @State private var showRateMenu = false
     @State private var showEpisodePanel = false
     @State private var showSourcePanel = false
+    @State private var showChannelPanel = false
     @State private var osdText: String?
     @State private var osdOpacity: Double = 0
     @State private var osdTimer: Timer?
@@ -405,6 +410,12 @@ struct TencentStylePlayerOverlay: View {
 
     private var controlsBar: some View {
         VStack(spacing: 10) {
+            // 频道面板（直播全屏切频道）
+            if showChannelPanel {
+                channelPanel
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
             // 选集面板（腾讯风格弹层）
             if showEpisodePanel {
                 episodePanel
@@ -467,8 +478,8 @@ struct TencentStylePlayerOverlay: View {
                 .disabled(duration <= 0)
             }
 
-            // 按钮行：左播放控制 / 右功能按钮（腾讯风格）
-            HStack(spacing: 20) {
+            // 按钮行：左播放控制固定 / 右功能按钮组（窄屏可横向滚动，防止竖屏溢出文字不显示）
+            HStack(spacing: 16) {
                 HStack(spacing: 20) {
                     Button {
                         showControls()
@@ -506,89 +517,119 @@ struct TencentStylePlayerOverlay: View {
                     .buttonStyle(.plain)
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                // 选集按钮（腾讯视频底部右侧"选集"同款）
-                if episodeNames.count > 1 {
-                    Button {
-                        showControls()
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            showEpisodePanel.toggle()
-                            showSourcePanel = false
-                            showRateMenu = false
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        // 直播频道按钮
+                        if channelNames.count > 1 {
+                            Button {
+                                showControls()
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    showChannelPanel.toggle()
+                                    showEpisodePanel = false
+                                    showSourcePanel = false
+                                    showRateMenu = false
+                                }
+                            } label: {
+                                Text("频道")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(showChannelPanel ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
                         }
-                    } label: {
-                        Text("选集")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(showEpisodePanel ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
 
-                // 线路（播放源）按钮
-                if sourceNames.count > 1 {
-                    Button {
-                        showControls()
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            showSourcePanel.toggle()
-                            showEpisodePanel = false
-                            showRateMenu = false
+                        // 选集按钮（腾讯视频底部右侧"选集"同款）
+                        if episodeNames.count > 1 {
+                            Button {
+                                showControls()
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    showEpisodePanel.toggle()
+                                    showChannelPanel = false
+                                    showSourcePanel = false
+                                    showRateMenu = false
+                                }
+                            } label: {
+                                Text("选集")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(showEpisodePanel ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
                         }
-                    } label: {
-                        Text("线路")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(showSourcePanel ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
-                            .clipShape(Capsule())
+
+                        // 线路（播放源）按钮
+                        if sourceNames.count > 1 {
+                            Button {
+                                showControls()
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    showSourcePanel.toggle()
+                                    showChannelPanel = false
+                                    showEpisodePanel = false
+                                    showRateMenu = false
+                                }
+                            } label: {
+                                Text("线路")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(showSourcePanel ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        // 倍速按钮
+                        Button {
+                            showControls()
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                showRateMenu.toggle()
+                                showChannelPanel = false
+                                showEpisodePanel = false
+                                showSourcePanel = false
+                            }
+                        } label: {
+                            Text("倍速")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(showRateMenu ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            showControls()
+                            onRotate?()
+                        } label: {
+                            Image(systemName: "rectangle.landscape.rotate")
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(width: 34, height: 34)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            onClose?()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 21))
+                                .foregroundColor(.white)
+                                .frame(width: 34, height: 34)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    .padding(.vertical, 2)
                 }
-
-                // 倍速按钮
-                Button {
-                    showControls()
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        showRateMenu.toggle()
-                        showEpisodePanel = false
-                        showSourcePanel = false
-                    }
-                } label: {
-                    Text("倍速")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(showRateMenu ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    showControls()
-                    onRotate?()
-                } label: {
-                    Image(systemName: "rectangle.landscape.rotate")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundColor(.white)
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    onClose?()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 21))
-                        .foregroundColor(.white)
-                        .frame(width: 34, height: 34)
-                }
-                .buttonStyle(.plain)
             }
         }
         .foregroundColor(.white)
@@ -602,6 +643,49 @@ struct TencentStylePlayerOverlay: View {
             )
         )
         .environment(\.colorScheme, .dark)
+    }
+
+    // MARK: - 频道面板（直播全屏）
+
+    private var channelPanel: some View {
+        VStack(spacing: 10) {
+            Text("频道")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.9))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 4) {
+                    ForEach(channelNames.indices, id: \.self) { i in
+                        Button {
+                            selectChannel(i)
+                        } label: {
+                            HStack {
+                                Text(channelNames[i])
+                                    .font(.system(size: 12, weight: i == selectedChannelIndex ? .bold : .regular))
+                                    .foregroundColor(i == selectedChannelIndex ? .black : .white)
+                                    .lineLimit(1)
+                                Spacer()
+                                if i == selectedChannelIndex {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.black)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(i == selectedChannelIndex ? Color.white : Color.white.opacity(0.15))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 260)
+        }
+        .padding(12)
+        .background(Color.black.opacity(0.8))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: - 选集面板
@@ -746,6 +830,18 @@ struct TencentStylePlayerOverlay: View {
         }
         showEpisodePanel = false
         onSelectEpisode?(index)
+        showControls()
+    }
+
+    /// 选择直播频道：关闭面板并通知父级切台。
+    private func selectChannel(_ index: Int) {
+        guard index != selectedChannelIndex else {
+            showChannelPanel = false
+            showControls()
+            return
+        }
+        showChannelPanel = false
+        onSelectChannel?(index)
         showControls()
     }
 

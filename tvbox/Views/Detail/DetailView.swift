@@ -726,6 +726,8 @@ struct FullScreenPlayerView: View {
     @Environment(\.dismiss) private var dismiss
     /// 切后台再返回时重新应用播放器朝向。
     @Environment(\.scenePhase) private var scenePhase
+    /// 全屏系统播放器播放结束观察者（自动连播下一集）。
+    @State private var playbackEndObserver: NSObjectProtocol?
     /// 左右横屏方向标记（用于旋转按钮切换 landscapeLeft/Right）。
     @State private var isLandscapeLeft = false
     @AppStorage(HawkConfig.PLAY_TYPE_VOD) private var vodPlayTypeRaw = -1
@@ -812,6 +814,7 @@ struct FullScreenPlayerView: View {
         // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制目标朝向。
         .onAppear {
             showControls()
+            bindPlaybackEndObserver()
             // 转场期间多次尝试，确保方向落地。
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 applyPlayerOrientation(player: systemController?.player)
@@ -832,11 +835,32 @@ struct FullScreenPlayerView: View {
             }
         }
         .onDisappear {
+            if let observer = playbackEndObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
             DeviceOrientation.forcePortrait()
             hideControlsTask?.cancel()
             endLongPressSpeed(player: systemController?.player)
         }
         #endif
+    }
+
+    /// 监听系统播放器播放结束（播放完成自动播放下一集）。
+    private func bindPlaybackEndObserver() {
+        if let old = playbackEndObserver {
+            NotificationCenter.default.removeObserver(old)
+            playbackEndObserver = nil
+        }
+        guard selectedEngine == .system,
+              let player = systemController?.player,
+              let item = player.currentItem else { return }
+        playbackEndObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            self?.onPlaybackEnded?()
+        }
     }
 
     // MARK: - VLC 引擎全屏自绘控制（系统引擎已在播放器内核内集成）
@@ -974,6 +998,7 @@ struct FullScreenPlayerView: View {
         let savedRate = player.defaultRate
         player.replaceCurrentItem(with: item)
         player.playImmediately(atRate: savedRate)
+        bindPlaybackEndObserver()
     }
     // MARK: - 悬浮按钮显隐
 
