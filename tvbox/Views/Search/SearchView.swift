@@ -178,8 +178,8 @@ struct SearchView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
-        // 滚动列表时自动收起键盘（腾讯视频式交互）。
-        .scrollDismissesKeyboard(.interactively)
+        // 滚动列表时立即收起键盘（腾讯视频式交互）。
+        .scrollDismissesKeyboard(.immediately)
         .navigationDestination(for: Movie.Video.self) { video in
             DetailView(video: video)
         }
