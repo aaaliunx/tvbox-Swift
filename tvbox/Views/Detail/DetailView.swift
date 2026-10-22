@@ -650,6 +650,17 @@ struct FullScreenPlayerView: View {
                 Spacer()
             }
         }
-        // 全屏方向跟随系统自动旋转：转动手机画面实时横竖屏切换。
+        // 进入全屏强制横屏（即使系统"自动旋转"关闭也能横屏观看）；
+        // 若用户开启自动旋转，之后转动手机画面实时跟随。
+        .onAppear {
+            #if os(iOS)
+            DeviceOrientation.forceLandscape()
+            #endif
+        }
+        .onDisappear {
+            #if os(iOS)
+            DeviceOrientation.forcePortrait()
+            #endif
+        }
     }
 }

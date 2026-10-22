@@ -107,6 +107,26 @@ struct LiveView: View {
                     
                     // 覆盖 UI
                     overlayUI
+                    
+                    #if os(iOS)
+                    // 手势层置于覆盖 UI 之下、播放器之上：
+                    // 单击唤出顶部按钮+底部控制条（通过 vlcInteractionToken 通知播放器），
+                    // 双击暂停/播放，右侧滑动调音量。位于 VLC 的 UIView 之上，
+                    // 不会再被播放器输出层吞掉触摸。
+                    LivePlayerGestureLayer(
+                        onTogglePlayPause: {
+                            reportUserActivity()
+                            livePlayerController.togglePlayback()
+                        },
+                        onToggleControls: {
+                            reportUserActivity()
+                        },
+                        onVolumeChanged: { delta in
+                            let newVol = max(0, min(200, livePlayerController.volume + Int(delta * 200)))
+                            livePlayerController.setVolume(newVol)
+                        }
+                    )
+                    #endif
                 }
             }
             .navigationTitle("直播")
@@ -827,7 +847,14 @@ struct LiveFullScreenPlayerView: View {
                 Spacer()
             }
         }
-        // 全屏方向跟随系统自动旋转：手机横放即横屏、竖放即竖屏，转动画面实时跟随。
+        // 进入全屏强制横屏（即使系统"自动旋转"关闭也能横屏观看）；
+        // 若用户开启自动旋转，之后转动手机画面实时跟随（requestGeometryUpdate 仅请求一次，不锁定后续方向）。
+        .onAppear {
+            DeviceOrientation.forceLandscape()
+        }
+        .onDisappear {
+            DeviceOrientation.forcePortrait()
+        }
     }
 }
 #endif

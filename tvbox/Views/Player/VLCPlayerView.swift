@@ -1554,20 +1554,6 @@ struct VLCLivePlayerView: View {
                     .tint(.white)
             }
             
-            #if os(iOS)
-            // 手势层直接放入 ZStack 顶层（而非 overlay）：
-            // overlay 在 UIViewRepresentable 之上时手势可能被 VLC 的 UIView 吞掉，
-            // ZStack 内的 SwiftUI 视图 hit-test 优先，单击必达 toggleControls。
-            LivePlayerGestureLayer(
-                onTogglePlayPause: { togglePlaybackWithOSD() },
-                onToggleControls: { toggleControls() },
-                onVolumeChanged: { delta in
-                    let newVol = max(0, min(200, controller.volume + Int(delta * 200)))
-                    controller.setVolume(newVol)
-                }
-            )
-            #endif
-            
             if let osdIcon = osdIcon {
                 Image(systemName: osdIcon)
                     .font(.system(size: 60, weight: .semibold))
