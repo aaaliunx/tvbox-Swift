@@ -1016,6 +1016,7 @@ struct LiveFullScreenPlayerView: View {
             if useSystemEngine {
                 // 系统引擎：AVPlayerViewController 渲染画面（关闭系统控制条），
                 // 腾讯风格控制条覆盖在播放器内核之上（一体集成）。
+                // 控制条无条件渲染：即使播放器实例失效/为空，控制栏仍可唤出操作。
                 if let systemPlayer {
                     ZStack {
                         AVPlayerViewControllerRepresentable(
@@ -1026,52 +1027,52 @@ struct LiveFullScreenPlayerView: View {
                             }
                         )
                         .ignoresSafeArea()
-
-                        TencentStylePlayerOverlay(
-                            player: systemPlayer,
-                            title: title,
-                            isPlaying: isLivePlaying,
-                            onPlayPause: { toggleLivePlayPause() },
-                            onRotate: { rotateLiveFullScreen() },
-                            onClose: { dismiss() },
-                            onLongPressBegan: { beginLiveLongPressSpeed() },
-                            onLongPressEnded: { endLiveLongPressSpeed() },
-                            sourceNames: (0..<max(sourceNum, 1)).map { "线路\($0 + 1)" },
-                            selectedSourceIndex: min(max(sourceIndex, 0), max(sourceNum - 1, 0)),
-                            onSelectSource: { index in onSelectSource?(index) },
-                            channelNames: channelNames,
-                            selectedChannelIndex: selectedChannelIndex,
-                            onSelectChannel: { index in onSelectChannel?(index) },
-                            groupNames: groupNames,
-                            selectedGroupIndex: selectedGroupIndex,
-                            onSelectGroup: { index in onSelectGroup?(index) },
-                            isLive: true,
-                            keepControlsVisible: playbackFailed
-                        )
-                        // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
-
-                        // 播放失败提示：控制栏保持显示，可切线路/频道。
-                        if playbackFailed {
-                            VStack(spacing: 10) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.system(size: 34))
-                                    .foregroundColor(.white.opacity(0.85))
-                                Text("直播源无法播放")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(.white)
-                                Text("控制栏已保持显示，可切换线路或频道")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.white.opacity(0.7))
-                            }
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 16)
-                            .background(Color.black.opacity(0.55))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .allowsHitTesting(false)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                        }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+
+                TencentStylePlayerOverlay(
+                    player: systemPlayer,
+                    title: title,
+                    isPlaying: isLivePlaying,
+                    onPlayPause: { toggleLivePlayPause() },
+                    onRotate: { rotateLiveFullScreen() },
+                    onClose: { dismiss() },
+                    onLongPressBegan: { beginLiveLongPressSpeed() },
+                    onLongPressEnded: { endLiveLongPressSpeed() },
+                    sourceNames: (0..<max(sourceNum, 1)).map { "线路\($0 + 1)" },
+                    selectedSourceIndex: min(max(sourceIndex, 0), max(sourceNum - 1, 0)),
+                    onSelectSource: { index in onSelectSource?(index) },
+                    channelNames: channelNames,
+                    selectedChannelIndex: selectedChannelIndex,
+                    onSelectChannel: { index in onSelectChannel?(index) },
+                    groupNames: groupNames,
+                    selectedGroupIndex: selectedGroupIndex,
+                    onSelectGroup: { index in onSelectGroup?(index) },
+                    isLive: true,
+                    keepControlsVisible: playbackFailed
+                )
+                // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
+
+                // 播放失败提示：控制栏保持显示，可切线路/频道。
+                if playbackFailed {
+                    VStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 34))
+                            .foregroundColor(.white.opacity(0.85))
+                        Text("直播源无法播放")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                        Text("控制栏已保持显示，可切换线路或频道")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 16)
+                    .background(Color.black.opacity(0.55))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .allowsHitTesting(false)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 }
             } else if !urlString.isEmpty {
                 ZStack {
@@ -1154,41 +1155,45 @@ struct LiveFullScreenPlayerView: View {
     @ViewBuilder
     private var liveVlcOverlayControls: some View {
         ZStack {
-            // 悬浮按钮隐藏时的手势层：左亮度右音量、单击唤出、长按倍速（直播无 seek）。
-            if !controlsVisible {
-                FullScreenGestureLayer(
-                    onBrightness: { translation in
-                        if brightnessGestureStart == nil {
-                            brightnessGestureStart = UIScreen.main.brightness
-                        }
-                        let delta = -translation.height / 800.0
-                        let target = min(max((brightnessGestureStart ?? 0.5) + delta, 0), 1)
-                        UIScreen.main.brightness = target
-                        showOSD("亮度 \(Int(target * 100))%")
-                    },
-                    onVolume: { translation in
-                        if volumeGestureStart == nil {
-                            volumeGestureStart = SystemVolumeController.shared.currentVolume()
-                        }
-                        let delta = -translation.height / 800.0
-                        let target = min(max((volumeGestureStart ?? 0.5) + Float(delta), 0), 1)
-                        SystemVolumeController.shared.setVolume(target)
-                        showOSD("音量 \(Int(target * 100))%")
-                    },
-                    onTap: { showControls() },
-                    onLongPressBegan: {
-                        beginLiveLongPressSpeed()
-                    },
-                    onLongPressEnded: {
-                        endLiveLongPressSpeed()
-                    },
-                    onDragEnded: {
-                        brightnessGestureStart = nil
-                        volumeGestureStart = nil
-                        endLiveLongPressSpeed()
+            // 手势层常驻：左亮度右音量、单击唤出/隐藏、长按倍速（直播无 seek）。
+            FullScreenGestureLayer(
+                onBrightness: { translation in
+                    if brightnessGestureStart == nil {
+                        brightnessGestureStart = UIScreen.main.brightness
                     }
-                )
-            }
+                    let delta = -translation.height / 800.0
+                    let target = min(max((brightnessGestureStart ?? 0.5) + delta, 0), 1)
+                    UIScreen.main.brightness = target
+                    showOSD("亮度 \(Int(target * 100))%")
+                },
+                onVolume: { translation in
+                    if volumeGestureStart == nil {
+                        volumeGestureStart = SystemVolumeController.shared.currentVolume()
+                    }
+                    let delta = -translation.height / 800.0
+                    let target = min(max((volumeGestureStart ?? 0.5) + Float(delta), 0), 1)
+                    SystemVolumeController.shared.setVolume(target)
+                    showOSD("音量 \(Int(target * 100))%")
+                },
+                onTap: {
+                    if controlsVisible {
+                        hideControlsNow()
+                    } else {
+                        showControls()
+                    }
+                },
+                onLongPressBegan: {
+                    beginLiveLongPressSpeed()
+                },
+                onLongPressEnded: {
+                    endLiveLongPressSpeed()
+                },
+                onDragEnded: {
+                    brightnessGestureStart = nil
+                    volumeGestureStart = nil
+                    endLiveLongPressSpeed()
+                }
+            )
 
             // 亮度/音量调节提示
             if let osdText {
@@ -1206,6 +1211,8 @@ struct LiveFullScreenPlayerView: View {
             // VLC 引擎控制栏（底部）：播放/暂停 + 旋转 + 退出。
             VStack {
                 Spacer()
+                    .contentShape(Rectangle())
+                    .onTapGesture { hideControlsNow() }
                 HStack(spacing: 16) {
                     Button {
                         showControls()
@@ -1309,6 +1316,8 @@ struct LiveFullScreenPlayerView: View {
             controlsVisible = true
         }
         hideControlsTask?.cancel()
+        // 播放失败时控制栏常显（VLC 分支同样适用）。
+        guard !playbackFailed else { return }
         let task = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_500_000_000)
             guard !Task.isCancelled else { return }
@@ -1317,6 +1326,13 @@ struct LiveFullScreenPlayerView: View {
             }
         }
         hideControlsTask = task
+    }
+
+    private func hideControlsNow() {
+        hideControlsTask?.cancel()
+        withAnimation(.easeOut(duration: 0.3)) {
+            controlsVisible = false
+        }
     }
 
     private func showOSD(_ text: String) {

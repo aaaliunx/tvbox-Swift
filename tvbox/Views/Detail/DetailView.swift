@@ -754,47 +754,43 @@ struct FullScreenPlayerView: View {
             if selectedEngine == .system {
                 // 系统引擎：AVPlayerViewController 渲染画面（关闭系统控制条），
                 // 腾讯风格控制条覆盖在播放器内核之上（一体集成）。
+                // 控制条无条件渲染：即使播放器实例失效，控制栏仍可唤出操作。
                 if let player = systemController?.player {
-                    ZStack {
-                        AVPlayerViewControllerRepresentable(
-                            player: player,
-                            onViewAppeared: {
-                                // 播放控制器真正呈现后按视频方向设置朝向（比 SwiftUI onAppear 更可靠）。
-                                applyPlayerOrientation(player: player)
-                            }
-                        )
-                        .ignoresSafeArea()
-
-                        TencentStylePlayerOverlay(
-                            player: player,
-                            title: title,
-                            isPlaying: isFullScreenPlaying,
-                            onPlayPause: { togglePlayPauseInFullScreen() },
-                            onRotate: { rotateFullScreen() },
-                            onClose: { closeFullScreen() },
-                            onLongPressBegan: { beginLongPressSpeed(player: player) },
-                            onLongPressEnded: { endLongPressSpeed(player: player) },
-                            sourceNames: sourceNames,
-                            selectedSourceIndex: selectedSourceIndex,
-                            onSelectSource: { index in
-                                guard index >= 0, index < sourceNames.count else { return }
-                                onSelectSource?(index)
-                            },
-                            episodeNames: episodeNames,
-                            selectedEpisodeIndex: selectedEpisodeIndex,
-                            onSelectEpisode: { index in
-                                onSelectEpisode?(index)
-                            }
-                        )
-                        // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
-                        .onChange(of: urlString) { _, newURL in
-                            // 切线路/切集后按新地址换流，不重建播放器。
-                            reloadSystemPlayer(with: newURL)
+                    AVPlayerViewControllerRepresentable(
+                        player: player,
+                        onViewAppeared: {
+                            // 播放控制器真正呈现后按视频方向设置朝向（比 SwiftUI onAppear 更可靠）。
+                            applyPlayerOrientation(player: player)
                         }
+                    )
+                    .ignoresSafeArea()
+                }
+
+                TencentStylePlayerOverlay(
+                    player: systemController?.player,
+                    title: title,
+                    isPlaying: isFullScreenPlaying,
+                    onPlayPause: { togglePlayPauseInFullScreen() },
+                    onRotate: { rotateFullScreen() },
+                    onClose: { closeFullScreen() },
+                    onLongPressBegan: { beginLongPressSpeed(player: systemController?.player) },
+                    onLongPressEnded: { endLongPressSpeed(player: systemController?.player) },
+                    sourceNames: sourceNames,
+                    selectedSourceIndex: selectedSourceIndex,
+                    onSelectSource: { index in
+                        guard index >= 0, index < sourceNames.count else { return }
+                        onSelectSource?(index)
+                    },
+                    episodeNames: episodeNames,
+                    selectedEpisodeIndex: selectedEpisodeIndex,
+                    onSelectEpisode: { index in
+                        onSelectEpisode?(index)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    Color.black
+                )
+                // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
+                .onChange(of: urlString) { _, newURL in
+                    // 切线路/切集后按新地址换流，不重建播放器。
+                    reloadSystemPlayer(with: newURL)
                 }
             } else {
                 // VLC 引擎：保留页面播放器实例 + 自绘控制。
