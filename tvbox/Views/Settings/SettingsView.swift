@@ -561,7 +561,9 @@ struct SettingsView: View {
                                             )
                                         
                                         if !source.isSupportedInSwift {
-                                            Text("暂不支持")
+                                            // jar:// 为安卓 App 内置 jar 包协议，iOS 无对应 jar 文件；
+                                            // http(s) 的 .jar/.js 脚本源已在 SpiderService 支持（zip 解包 JS）。
+                                            Text(source.api.hasPrefix("jar://") ? "安卓内置" : "暂不支持")
                                                 .font(.system(size: 10, weight: .medium))
                                                 .foregroundColor(.red.opacity(0.8))
                                                 .padding(.horizontal, 6)
