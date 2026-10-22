@@ -5,6 +5,8 @@ struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
     @EnvironmentObject var appState: AppState
     @State private var categoryScrollAnchorId: String?
+    /// 分类筛选面板状态。
+    @State private var showFilterSheet = false
     
     // 网格布局
     #if os(iOS)
@@ -87,57 +89,84 @@ struct HomeView: View {
     // MARK: - 分类标签栏
     
     private var categoryTabBar: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 0) {
-                    ForEach(viewModel.sorts) { sort in
-                        Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                viewModel.selectSort(sort)
+        HStack(spacing: 8) {
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        ForEach(viewModel.sorts) { sort in
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    viewModel.selectSort(sort)
+                                }
+                                categoryScrollAnchorId = sort.id
+                                scrollCategoryBar(to: sort.id, proxy: proxy)
+                            } label: {
+                                VStack(spacing: 6) {
+                                    Text(sort.name)
+                                        .font(.system(size: 14, weight: viewModel.selectedSort?.id == sort.id ? .bold : .regular))
+                                        .foregroundColor(viewModel.selectedSort?.id == sort.id ? .white : .white.opacity(0.6))
+                                    
+                                    // 底部指示条
+                                    RoundedRectangle(cornerRadius: 1.5)
+                                        .fill(Color.orange)
+                                        .frame(width: 20, height: 3)
+                                        .opacity(viewModel.selectedSort?.id == sort.id ? 1 : 0)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
                             }
-                            categoryScrollAnchorId = sort.id
-                            scrollCategoryBar(to: sort.id, proxy: proxy)
-                        } label: {
-                            VStack(spacing: 6) {
-                                Text(sort.name)
-                                    .font(.system(size: 14, weight: viewModel.selectedSort?.id == sort.id ? .bold : .regular))
-                                    .foregroundColor(viewModel.selectedSort?.id == sort.id ? .white : .white.opacity(0.6))
-                                
-                                // 底部指示条
-                                RoundedRectangle(cornerRadius: 1.5)
-                                    .fill(Color.orange)
-                                    .frame(width: 20, height: 3)
-                                    .opacity(viewModel.selectedSort?.id == sort.id ? 1 : 0)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
+                            .buttonStyle(.plain)
+                            .id(sort.id)
                         }
-                        .buttonStyle(.plain)
-                        .id(sort.id)
                     }
+                    .padding(.horizontal, 12)
                 }
-                .padding(.horizontal, 12)
+                .onAppear {
+                    syncCategoryScrollAnchorIfNeeded()
+                    scrollCategoryBar(to: categoryScrollAnchorId, proxy: proxy, animated: false)
+                }
+                .onChange(of: viewModel.sorts.map(\.id)) { oldValue, newValue in
+                    syncCategoryScrollAnchorIfNeeded()
+                    scrollCategoryBar(to: categoryScrollAnchorId, proxy: proxy, animated: false)
+                }
+                .onChange(of: viewModel.selectedSort?.id) { oldId, newId in
+                    guard let newId else { return }
+                    categoryScrollAnchorId = newId
+                    scrollCategoryBar(to: newId, proxy: proxy)
+                }
             }
-            .onAppear {
-                syncCategoryScrollAnchorIfNeeded()
-                scrollCategoryBar(to: categoryScrollAnchorId, proxy: proxy, animated: false)
-            }
-            .onChange(of: viewModel.sorts.map(\.id)) { oldValue, newValue in
-                syncCategoryScrollAnchorIfNeeded()
-                scrollCategoryBar(to: categoryScrollAnchorId, proxy: proxy, animated: false)
-            }
-            .onChange(of: viewModel.selectedSort?.id) { oldId, newId in
-                guard let newId else { return }
-                categoryScrollAnchorId = newId
-                scrollCategoryBar(to: newId, proxy: proxy)
+            
+            // 分类筛选按钮（当前分类支持筛选时显示）
+            if let sort = viewModel.selectedSort,
+               sort.id != "home",
+               !sort.filters.isEmpty {
+                Button {
+                    showFilterSheet = true
+                } label: {
+                    Image(systemName: viewModel.activeFilters.isEmpty ? "slider.horizontal.3" : "slider.horizontal.3.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(viewModel.activeFilters.isEmpty ? .white.opacity(0.7) : .orange)
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
             }
         }
+        .padding(.horizontal, 16)
         .padding(.bottom, 4)
+        .sheet(isPresented: $showFilterSheet) {
+            if let sort = viewModel.selectedSort {
+                filterPanel(sort: sort)
+            }
+        }
     }
     
-    private func categoryIndex(for id: String?) -> Int? {
-        guard let id else { return nil }
-        return viewModel.sorts.firstIndex(where: { $0.id == id })
+    private func filterPanel(sort: MovieSort.SortData) -> some View {
+        CategoryFilterPanel(
+            sort: sort,
+            initialFilters: viewModel.activeFilters,
+            onApply: { viewModel.applyFilters($0) },
+            onClear: { viewModel.clearFilters() }
+        )
     }
     
     private func syncCategoryScrollAnchorIfNeeded() {
@@ -251,6 +280,73 @@ struct HomeView: View {
         }
         .navigationDestination(for: Movie.Video.self) { video in
             DetailView(video: video)
+        }
+    }
+}
+
+/// 分类筛选面板（对齐安卓版分类筛选交互）。
+/// 展示分类的所有筛选维度，每维度单选一个值。
+private struct CategoryFilterPanel: View {
+    let sort: MovieSort.SortData
+    let initialFilters: [String: String]
+    let onApply: ([String: String]) -> Void
+    let onClear: () -> Void
+    
+    @Environment(\.dismiss) private var dismiss
+    /// 各筛选维度的当前选中值（key → value 的 v 字段）。
+    @State private var selection: [String: String] = [:]
+    /// 维度 key → 展示名。
+    @State private var displayNames: [String: String] = [:]
+    /// 维度 key → 选项列表。
+    @State private var options: [String: [MovieSort.SortFilter.SortFilterValue]] = [:]
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                ForEach(sort.filters, id: \.key) { filter in
+                    Section(filter.name) {
+                        // "全部" 表示该维度不限。
+                        Picker("", selection: Binding(
+                            get: { selection[filter.key] ?? "" },
+                            set: { selection[filter.key] = $0 }
+                        )) {
+                            Text("全部").tag("")
+                            ForEach(filter.values, id: \.v) { value in
+                                Text(value.n).tag(value.v)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                    }
+                }
+            }
+            .navigationTitle("筛选")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("清除") {
+                        onClear()
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("确定") {
+                        onApply(selection.filter { !$0.value.isEmpty })
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .onAppear {
+            // 回填当前激活的筛选。
+            for filter in sort.filters {
+                selection[filter.key] = initialFilters[filter.key] ?? ""
+                displayNames[filter.key] = filter.name
+                options[filter.key] = filter.values
+            }
         }
     }
 }

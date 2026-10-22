@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 设置页 - 对应 Android 版 SettingActivity + ModelSettingFragment
 struct SettingsView: View {
@@ -31,6 +32,10 @@ struct SettingsView: View {
     @State private var showingPicker: PickerType = .none
     /// 遥控服务状态。
     @StateObject private var remoteControl = RemoteControlService.shared
+    /// 备份导出文件（ShareLink 用）。
+    @State private var backupExportURL: URL?
+    /// 备份导入文件选择器。
+    @State private var showImportImporter = false
     
     enum PickerType {
         case none
@@ -160,6 +165,28 @@ struct SettingsView: View {
                         }
                     }
                     
+                    // 备份 / 恢复
+                    SectionCard(title: "备份与恢复") {
+                        SettingsRow(icon: "square.and.arrow.up", title: "导出配置", value: "") {
+                            if let data = viewModel.buildBackupJSON() {
+                                let url = FileManager.default.temporaryDirectory
+                                    .appendingPathComponent("tvbox_backup.json")
+                                try? data.write(to: url)
+                                backupExportURL = url
+                            }
+                        }
+                        if let backupExportURL {
+                            Divider().background(Color.white.opacity(0.1))
+                            ShareLink(item: backupExportURL) {
+                                SettingsRow(icon: "square.and.arrow.up.circle", title: "分享备份文件", value: "", action: nil)
+                            }
+                        }
+                        Divider().background(Color.white.opacity(0.1))
+                        SettingsRow(icon: "square.and.arrow.down", title: "导入配置", value: "") {
+                            showImportImporter = true
+                        }
+                    }
+                    
                     // 缓存
                     SectionCard(title: "缓存") {
                         SettingsRow(icon: "trash", title: "清除缓存", value: viewModel.cacheSizeString) {
@@ -193,6 +220,26 @@ struct SettingsView: View {
             }
         }
         .overlay(pickerOverlay)
+        .fileImporter(
+            isPresented: $showImportImporter,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first,
+                      let data = try? Data(contentsOf: url) else { return }
+                if viewModel.restoreBackup(json: data) {
+                    // 恢复成功后刷新源列表。
+                    Task {
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        await viewModel.loadConfig()
+                    }
+                }
+            case .failure:
+                break
+            }
+        }
     }
     
     // MARK: - 选择器 Overlay

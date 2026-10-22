@@ -1124,7 +1124,7 @@ struct VLCVodPlayerView: View {
                 
                 ForEach(Array(subtitleTracks.enumerated()), id: \.offset) { index, track in
                     Button {
-                        controller.mediaPlayer.currentVideoSubTitleIndex = Int32(track.index)
+                        controller.mediaPlayer.currentVideoSubTitleIndex = track.index
                         currentSubtitleIndex = Int(track.index)
                         showSubtitleMenu = false
                     } label: {
@@ -1133,7 +1133,7 @@ struct VLCVodPlayerView: View {
                                 .foregroundColor(.white)
                                 .lineLimit(1)
                             Spacer()
-                            if currentSubtitleIndex == track.index {
+                            if currentSubtitleIndex == Int(track.index) {
                                 Image(systemName: "checkmark")
                                     .foregroundColor(.orange)
                             }

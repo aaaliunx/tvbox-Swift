@@ -211,6 +211,7 @@ actor CacheStore {
     }
     
     /// 根据 HawkConfig.HISTORY_NUM 截断历史记录（0 或未设置则不限）。
+    @MainActor
     private func trimHistoryIfNeeded(context: ModelContext) {
         let limit = UserDefaults.standard.integer(forKey: HawkConfig.HISTORY_NUM)
         guard limit > 0 else { return }

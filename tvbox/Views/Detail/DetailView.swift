@@ -35,7 +35,9 @@ struct DetailView: View {
                         startPosition: viewModel.currentPlaybackSeconds(),
                         onProgressChanged: handlePlaybackProgress,
                         onPlaybackEnded: playNextEpisodeIfNeeded,
-                        onPlaybackFailed: handlePlaybackFailed,
+                        onPlaybackFailed: {
+                            handlePlaybackFailed()
+                        },
                         onToggleFullScreen: {
                             openFullScreenPlayer()
                         },

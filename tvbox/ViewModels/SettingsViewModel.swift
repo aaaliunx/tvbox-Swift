@@ -143,6 +143,90 @@ class SettingsViewModel: ObservableObject {
         refreshCacheSize()
     }
     
+    // MARK: - 备份 / 恢复
+    
+    /// 导出配置备份 JSON（接口地址 + 核心设置）。
+    func buildBackupJSON() -> Data? {
+        var dict: [String: Any] = [
+            "api_url": vodApiUrl,
+            "live_api_url": liveApiUrl,
+            "play_type_vod": vodPlayerEngine.rawValue,
+            "play_type_live": livePlayerEngine.rawValue,
+            "play_scale": playScale.rawValue,
+            "history_num": historyLimit,
+            "m3u8_clean": m3u8Clean,
+            "play_time_step": playTimeStep,
+            "play_decode_mode": decodeMode.rawValue,
+            "play_vlc_buffer_mode": vlcBufferMode.rawValue,
+            "export_version": 1
+        ]
+        // 兼容多仓库入口的 API 历史。
+        if !apiHistory.isEmpty {
+            dict["api_history"] = apiHistory
+        }
+        return try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted])
+    }
+    
+    /// 从备份 JSON 恢复配置，返回是否成功。
+    @discardableResult
+    func restoreBackup(json: Data) -> Bool {
+        guard let obj = try? JSONSerialization.jsonObject(with: json) as? [String: Any] else {
+            return false
+        }
+        let defaults = UserDefaults.standard
+        var changed = false
+        
+        func apply(_ key: String, value: Any?) {
+            guard let value else { return }
+            if let string = value as? String {
+                defaults.set(string, forKey: key)
+            } else if let number = value as? NSNumber {
+                defaults.set(number, forKey: key)
+            } else if let bool = value as? Bool {
+                defaults.set(bool, forKey: key)
+            }
+            changed = true
+        }
+        
+        apply(HawkConfig.API_URL, value: obj["api_url"])
+        apply(HawkConfig.LIVE_API_URL, value: obj["live_api_url"])
+        apply(HawkConfig.PLAY_TYPE_VOD, value: obj["play_type_vod"])
+        apply(HawkConfig.PLAY_TYPE_LIVE, value: obj["play_type_live"])
+        apply(HawkConfig.PLAY_SCALE, value: obj["play_scale"])
+        apply(HawkConfig.HISTORY_NUM, value: obj["history_num"])
+        apply(HawkConfig.M3U8_CLEAN, value: obj["m3u8_clean"])
+        apply(HawkConfig.PLAY_TIME_STEP, value: obj["play_time_step"])
+        apply(HawkConfig.PLAY_DECODE_MODE, value: obj["play_decode_mode"])
+        apply(HawkConfig.PLAY_VLC_BUFFER_MODE, value: obj["play_vlc_buffer_mode"])
+        if let history = obj["api_history"] as? [String] {
+            defaults.set(history, forKey: "api_history")
+            apiHistory = history
+            changed = true
+        }
+        
+        // 回填当前内存状态。
+        if let value = defaults.string(forKey: HawkConfig.API_URL) { vodApiUrl = value }
+        if defaults.object(forKey: HawkConfig.LIVE_API_URL) != nil {
+            liveApiUrl = defaults.string(forKey: HawkConfig.LIVE_API_URL) ?? ""
+        }
+        vodPlayerEngine = PlayerEngine.fromStoredValue(defaults.integer(forKey: HawkConfig.PLAY_TYPE_VOD))
+        livePlayerEngine = PlayerEngine.fromStoredValue(defaults.integer(forKey: HawkConfig.PLAY_TYPE_LIVE))
+        decodeMode = VideoDecodeMode.fromStoredValue(defaults.integer(forKey: HawkConfig.PLAY_DECODE_MODE))
+        vlcBufferMode = VLCBufferMode.fromStoredValue(defaults.integer(forKey: HawkConfig.PLAY_VLC_BUFFER_MODE))
+        let savedStep = defaults.integer(forKey: HawkConfig.PLAY_TIME_STEP)
+        playTimeStep = savedStep > 0 ? savedStep : 10
+        let savedHistoryLimit = defaults.integer(forKey: HawkConfig.HISTORY_NUM)
+        historyLimit = savedHistoryLimit > 0 ? savedHistoryLimit : 20
+        m3u8Clean = defaults.bool(forKey: HawkConfig.M3U8_CLEAN)
+        if let rawScale = defaults.string(forKey: HawkConfig.PLAY_SCALE),
+           let option = PlayScaleOption(rawValue: rawScale) {
+            playScale = option
+        } else {
+            playScale = .original
+        }
+        return changed
+    }
+    
     /// 加载配置
     func loadConfig() async {
         let trimmedVod = vodApiUrl.trimmingCharacters(in: .whitespacesAndNewlines)

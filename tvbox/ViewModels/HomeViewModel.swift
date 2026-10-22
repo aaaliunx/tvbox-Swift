@@ -21,6 +21,8 @@ class HomeViewModel: ObservableObject {
     @Published var hasMore = true
     /// 错误提示文案。
     @Published var errorMessage: String?
+    /// 当前分类的筛选条件（key → 值）。
+    @Published var activeFilters: [String: String] = [:]
     
     /// 源数据访问服务。
     private let sourceService = SourceService.shared
@@ -102,7 +104,12 @@ class HomeViewModel: ObservableObject {
         defer { isLoading = false }
         
         do {
-            let videos = try await sourceService.getList(sourceBean: source, sortData: sort, page: page)
+            let videos = try await sourceService.getList(
+                sourceBean: source,
+                sortData: sort,
+                page: page,
+                filters: activeFilters.isEmpty ? nil : activeFilters
+            )
             
             // 分类切换过程中，丢弃旧请求结果
             guard selectedSort?.id == sort.id else { return }
@@ -118,6 +125,33 @@ class HomeViewModel: ObservableObject {
         } catch {
             guard selectedSort?.id == sort.id else { return }
             errorMessage = error.localizedDescription
+        }
+    }
+    
+    /// 应用筛选条件并重新加载当前分类（对齐安卓版分类筛选）。
+    func applyFilters(_ filters: [String: String]) {
+        activeFilters = filters
+        errorMessage = nil
+        categoryVideos = []
+        currentPage = 1
+        hasMore = true
+        guard let sort = selectedSort else { return }
+        Task {
+            await loadCategoryVideos(page: 1, sort: sort)
+        }
+    }
+    
+    /// 清除全部筛选条件。
+    func clearFilters() {
+        guard !activeFilters.isEmpty else { return }
+        activeFilters = [:]
+        errorMessage = nil
+        categoryVideos = []
+        currentPage = 1
+        hasMore = true
+        guard let sort = selectedSort else { return }
+        Task {
+            await loadCategoryVideos(page: 1, sort: sort)
         }
     }
     
