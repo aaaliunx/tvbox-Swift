@@ -36,8 +36,3 @@ workflows:
           ls -lh TVBox-unsigned.ipa
     artifacts:
       - TVBox-unsigned.ipa
-      - build/tvbox.xcarchive/Products/Applications/TVBox.app/**/*.dSYM
-    publishing:
-      email:
-        recipients:
-          - example@example.com
