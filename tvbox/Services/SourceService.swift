@@ -694,10 +694,12 @@ enum SourceError: LocalizedError {
 /// 搜索并发闸门：限制同时进行的源搜索数量。
 /// 移动网络带宽有限，若全部源同时并发请求会互相挤兑、一起变慢，
 /// 限制并发后快源先返回、结果逐个显示。
-actor SearchGate {
+/// 用 NSLock 实现同步信号量（actor 的 release 不能在 defer 同步闭包中调用）。
+final class SearchGate: @unchecked Sendable {
+    private let lock = NSLock()
     private let limit: Int
     private var active = 0
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [() -> Void] = []
     
     init(limit: Int) {
         self.limit = limit
@@ -705,19 +707,29 @@ actor SearchGate {
     
     /// 获取一个并发席位，达到上限时挂起等待。
     func acquire() async {
-        if active < limit {
-            active += 1
-            return
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if active < limit {
+                active += 1
+                lock.unlock()
+                continuation.resume()
+            } else {
+                waiters.append { continuation.resume() }
+                lock.unlock()
+            }
         }
-        await withCheckedContinuation { waiters.append($0) }
     }
     
-    /// 释放一个并发席位，唤醒最早等待者。
+    /// 释放一个并发席位，唤醒最早等待者。同步方法，可在 defer 中调用。
     func release() {
+        lock.lock()
         if waiters.isEmpty {
             active -= 1
+            lock.unlock()
         } else {
-            waiters.removeFirst().resume()
+            let next = waiters.removeFirst()
+            lock.unlock()
+            next()
         }
     }
 }
