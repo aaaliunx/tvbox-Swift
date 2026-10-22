@@ -216,6 +216,8 @@ extension URL {
 /// 此组件通过自定义 URLSession 发起请求，解决海报永远加载不出来的问题
 struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     let url: URL?
+    /// 封面加载成功回调（用于搜索结果同剧封面复用）。
+    var onLoaded: ((URL) -> Void)? = nil
     @ViewBuilder let content: (Image) -> Content
     @ViewBuilder let placeholder: () -> Placeholder
     
@@ -226,10 +228,12 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
     
     init(
         url: URL?,
+        onLoaded: ((URL) -> Void)? = nil,
         @ViewBuilder content: @escaping (Image) -> Content,
         @ViewBuilder placeholder: @escaping () -> Placeholder
     ) {
         self.url = url
+        self.onLoaded = onLoaded
         self.content = content
         self.placeholder = placeholder
     }
@@ -263,6 +267,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
         
         if let cached = ImageCache.shared.get(for: url) {
             loadedImage = cached
+            onLoaded?(url)
             return
         }
         
@@ -272,6 +277,7 @@ struct CachedAsyncImage<Content: View, Placeholder: View>: View {
             ImageCache.shared.set(image, for: url)
             loadedImage = image
             loadFailed = false
+            onLoaded?(url)
         } catch {
             guard !Task.isCancelled else { return }
             loadedImage = nil

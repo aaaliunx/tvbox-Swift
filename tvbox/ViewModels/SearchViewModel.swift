@@ -37,10 +37,36 @@ class SearchViewModel: ObservableObject {
     private let sourceService = SourceService.shared
     /// 搜索请求序号（用于丢弃过期异步结果）。
     private var latestSearchRequestId: UUID = UUID()
+    /// 已成功加载封面的记录：剧名|年份 -> 可用封面 URL。
+    /// 用于把能加载出来的封面复用到同名其他结果上，避免失效源封面一直转圈。
+    private var loadedPosterByKey: [String: String] = [:]
     
     /// 初始化时同步加载本地历史记录，确保搜索页首次渲染即可展示。
     init() {
         loadSearchHistory()
+    }
+    
+    /// 封面加载成功回调：把已加载成功的封面复用到同剧（同名同年）其它结果上，
+    /// 这样即使某些站点的封面 URL 失效，搜索结果仍显示同剧封面而不是一直加载。
+    func registerLoadedPoster(for item: SearchResultItem, url: URL) {
+        let key = "\(item.video.name)|\(item.video.year)"
+        let urlString = url.absoluteString
+        // 只记录首次成功，避免同剧多源反复覆盖。
+        if loadedPosterByKey[key] == nil {
+            loadedPosterByKey[key] = urlString
+        }
+        // 同剧其它结果若封面不同，替换为已加载成功的封面。
+        var changed = false
+        for index in results.indices {
+            let k = "\(results[index].video.name)|\(results[index].video.year)"
+            if k == key, results[index].video.pic != urlString {
+                results[index].video.pic = urlString
+                changed = true
+            }
+        }
+        if changed {
+            objectWillChange.send()
+        }
     }
     
     /// 执行搜索（流式：每个源完成立即追加显示，不等全部源搜完）。
@@ -62,7 +88,16 @@ class SearchViewModel: ObservableObject {
             Task { @MainActor in
                 guard let self, requestId == self.latestSearchRequestId else { return }
                 // 直接追加，保留各源全部结果（与安卓版一致）；封面重复请求由磁盘缓存消除。
-                self.results.append(contentsOf: batch.map { SearchResultItem(video: $0, sourceName: sourceName) })
+                // 追加时若同剧已有成功加载的封面，直接复用，避免先渲染坏封面。
+                let items = batch.map { video -> SearchResultItem in
+                    var v = video
+                    let key = "\(v.name)|\(v.year)"
+                    if let loaded = self.loadedPosterByKey[key], !loaded.isEmpty {
+                        v.pic = loaded
+                    }
+                    return SearchResultItem(video: v, sourceName: sourceName)
+                }
+                self.results.append(contentsOf: items)
             }
         }
         guard requestId == latestSearchRequestId else { return }

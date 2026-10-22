@@ -126,7 +126,12 @@ struct SearchView: View {
                 ForEach(viewModel.results) { item in
                     NavigationLink(value: item.video) {
                         ZStack(alignment: .topTrailing) {
-                            VodCardView(video: item.video)
+                            VodCardView(
+                                video: item.video,
+                                onPosterLoaded: { url in
+                                    viewModel.registerLoadedPoster(for: item, url: url)
+                                }
+                            )
                             // 来源站点名徽标
                             Text(item.sourceName)
                                 .font(.system(size: 10, weight: .medium))
