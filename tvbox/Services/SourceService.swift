@@ -491,6 +491,7 @@ class SourceService {
     private struct SourceTimeoutError: Error {}
     
     /// 对源返回结果做本地关键词过滤，规避部分接口返回推荐/无关内容。
+    /// 支持模糊匹配：剧名包含、拼音全拼、拼音首字母（如搜 "zhanlang"/"zl" 可命中"战狼"）。
     private func filterSearchResults(_ videos: [Movie.Video], keyword: String) -> [Movie.Video] {
         let tokens = keyword
             .split(whereSeparator: \.isWhitespace)
@@ -510,7 +511,28 @@ class SourceService {
                 video.year
             ].joined(separator: " "))
             guard !searchableText.isEmpty else { return false }
-            return tokens.allSatisfy { searchableText.contains($0) }
+            
+            // 模糊匹配辅助：剧名的拼音全拼与首字母（只算一次）。
+            let namePinyin = video.name.pinyin
+            let nameInitials = video.name.pinyinInitials
+            
+            return tokens.allSatisfy { token in
+                // 1) 原文包含（剧名/演员/导演/类型等任一字段）。
+                if searchableText.contains(token) { return true }
+                // 2) 拼音全拼双向包含：搜 "zhanlang" 命中"战狼"；搜"战狼"命中返回含拼音的结果。
+                let tokenPinyin = token.pinyin
+                if !tokenPinyin.isEmpty,
+                   namePinyin.contains(tokenPinyin) || tokenPinyin.contains(namePinyin) {
+                    return true
+                }
+                // 3) 拼音首字母双向包含：搜 "zl" 命中"战狼"。
+                let tokenInitials = token.pinyinInitials
+                if !tokenInitials.isEmpty,
+                   nameInitials.contains(tokenInitials) || tokenInitials.contains(nameInitials) {
+                    return true
+                }
+                return false
+            }
         }
     }
     

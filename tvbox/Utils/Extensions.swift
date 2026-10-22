@@ -47,6 +47,29 @@ extension String {
         guard let url = URL(string: self) else { return false }
         return url.scheme == "http" || url.scheme == "https"
     }
+    
+    /// 转为拼音全拼（小写、去空格、去声调）：如 "战狼" -> "zhanlang"，"复仇者联盟3" -> "fuchouzhelianmeng3"
+    var pinyin: String {
+        let mutable = NSMutableString(string: self) as CFMutableString
+        CFStringTransform(mutable, nil, kCFStringTransformToLatin, false)
+        CFStringTransform(mutable, nil, kCFStringTransformStripDiacritics, false)
+        return (mutable as String)
+            .replacingOccurrences(of: " ", with: "")
+            .lowercased()
+    }
+    
+    /// 拼音首字母串（小写）：如 "战狼" -> "zl"，"复仇者联盟3" -> "fczlm3"
+    var pinyinInitials: String {
+        let mutable = NSMutableString(string: self) as CFMutableString
+        CFStringTransform(mutable, nil, kCFStringTransformToLatin, false)
+        CFStringTransform(mutable, nil, kCFStringTransformStripDiacritics, false)
+        let latin = (mutable as String).lowercased()
+        return latin
+            .split(separator: " ")
+            .compactMap { $0.first }
+            .map(String.init)
+            .joined()
+    }
 }
 
 extension Date {
