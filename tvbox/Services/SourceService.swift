@@ -125,59 +125,86 @@ class SourceService {
         if sourceBean.type == 0 {
             // XML 格式
             sorts = parseXMLCategories(from: jsonStr)
+            // 自适应：XML 分类缺失且响应实为 JSON（源标注 type=0 但返回 JSON）时，
+            // 回退 JSON 解析（class 或从 list 聚合真实分类）。
+            if sorts.isEmpty,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                let fallback = parseJSONCategoriesAndVideos(json, sourceKey: sourceBean.key)
+                if !fallback.sorts.isEmpty {
+                    sorts = fallback.sorts
+                    if homeVideos.isEmpty {
+                        homeVideos = fallback.homeVideos
+                    }
+                }
+            }
         } else {
             // JSON 格式 (type=1, type=4)
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                // 解析分类
-                if let classList = json["class"] as? [[String: Any]] {
-                    for cls in classList {
-                        let id: String
-                        if let intId = cls["type_id"] as? Int {
-                            id = String(intId)
-                        } else {
-                            id = cls["type_id"] as? String ?? ""
-                        }
-                        let name = cls["type_name"] as? String ?? ""
-                        sorts.append(MovieSort.SortData(id: id, name: name))
-                    }
-                }
-                
-                // 解析首页推荐视频
-                if let list = json["list"] as? [[String: Any]] {
-                    for item in list {
-                        let decoder = JSONDecoder()
-                        if let itemData = try? JSONSerialization.data(withJSONObject: item),
-                           var video = try? decoder.decode(Movie.Video.self, from: itemData) {
-                            video.sourceKey = sourceBean.key
-                            homeVideos.append(video)
-                        }
-                    }
-                }
-                
-                // 接口不提供 class（如部分苹果CMS 源不支持 ac=class，直接返回视频列表）时，
-                // 从推荐列表聚合出真实分类（type_id/type_name 去重），保证每个分类点开都有数据。
-                if sorts.isEmpty, let list = json["list"] as? [[String: Any]] {
-                    var seenIDs = Set<String>()
-                    var seenNames = Set<String>()
-                    for item in list {
-                        let id: String
-                        if let intId = item["type_id"] as? Int {
-                            id = String(intId)
-                        } else {
-                            id = item["type_id"] as? String ?? ""
-                        }
-                        let name = item["type_name"] as? String ?? ""
-                        guard !id.isEmpty, !name.isEmpty,
-                              seenIDs.insert(id).inserted,
-                              seenNames.insert(name).inserted else { continue }
-                        sorts.append(MovieSort.SortData(id: id, name: name))
-                    }
-                }
+                let parsed = parseJSONCategoriesAndVideos(json, sourceKey: sourceBean.key)
+                sorts = parsed.sorts
+                homeVideos = parsed.homeVideos
             }
         }
         
         return (sorts, homeVideos)
     }
+    
+    /// 从 JSON 响应解析分类与推荐视频：
+    /// 1) 优先解析 class 字段；2) 无 class 时从推荐列表聚合真实分类（type_id/type_name 去重），
+    /// 保证每个分类点开都有数据。
+    private func parseJSONCategoriesAndVideos(_ json: [String: Any], sourceKey: String) -> (sorts: [MovieSort.SortData], homeVideos: [Movie.Video]) {
+        var sorts: [MovieSort.SortData] = []
+        var homeVideos: [Movie.Video] = []
+        
+        // 解析分类
+        if let classList = json["class"] as? [[String: Any]] {
+            for cls in classList {
+                let id: String
+                if let intId = cls["type_id"] as? Int {
+                    id = String(intId)
+                } else {
+                    id = cls["type_id"] as? String ?? ""
+                }
+                let name = cls["type_name"] as? String ?? ""
+                sorts.append(MovieSort.SortData(id: id, name: name))
+            }
+        }
+        
+        // 解析首页推荐视频
+        if let list = json["list"] as? [[String: Any]] {
+            for item in list {
+                let decoder = JSONDecoder()
+                if let itemData = try? JSONSerialization.data(withJSONObject: item),
+                   var video = try? decoder.decode(Movie.Video.self, from: itemData) {
+                    video.sourceKey = sourceKey
+                    homeVideos.append(video)
+                }
+            }
+        }
+        
+        // 接口不提供 class（如部分苹果CMS 源不支持 ac=class，直接返回视频列表）时，
+        // 从推荐列表聚合出真实分类（type_id/type_name 去重），保证每个分类点开都有数据。
+        if sorts.isEmpty, let list = json["list"] as? [[String: Any]] {
+            var seenIDs = Set<String>()
+            var seenNames = Set<String>()
+            for item in list {
+                let id: String
+                if let intId = item["type_id"] as? Int {
+                    id = String(intId)
+                } else {
+                    id = item["type_id"] as? String ?? ""
+                }
+                let name = item["type_name"] as? String ?? ""
+                guard !id.isEmpty, !name.isEmpty,
+                      seenIDs.insert(id).inserted,
+                      seenNames.insert(name).inserted else { continue }
+                sorts.append(MovieSort.SortData(id: id, name: name))
+            }
+        }
+        
+        return (sorts, homeVideos)
+    }
+    
     
     private func parseXMLCategories(from xml: String) -> [MovieSort.SortData] {
         // 简化的 XML 分类解析
@@ -274,6 +301,28 @@ class SourceService {
         }
         
         let jsonStr = try await network.getString(from: url)
+        
+        // 自适应：type=0 标注的源若 XML 解析为空且响应实为 JSON
+        // （部分采集站只开 JSON 输出、XML 采集关闭），回退 JSON 解析，
+        // 避免"分类/列表无内容"。
+        if sourceBean.type == 0 {
+            var videos = try parseVideoList(jsonStr, sourceKey: sourceBean.key, type: 0)
+            if videos.isEmpty, jsonStr.contains("\"list\"") {
+                // 用 ac=detail 重新请求并按 JSON 解析
+                if let jsonURL = try? buildURL(
+                    base: api,
+                    queryItems: [
+                        URLQueryItem(name: "ac", value: "detail"),
+                        URLQueryItem(name: "t", value: sortData.id),
+                        URLQueryItem(name: "pg", value: String(page))
+                    ]
+                ), let detailStr = try? await network.getString(from: jsonURL) {
+                    videos = (try? parseVideoList(detailStr, sourceKey: sourceBean.key, type: 1)) ?? []
+                }
+            }
+            return videos
+        }
+        
         return try parseVideoList(jsonStr, sourceKey: sourceBean.key, type: sourceBean.type)
     }
     
