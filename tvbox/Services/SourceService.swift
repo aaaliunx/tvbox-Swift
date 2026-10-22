@@ -62,6 +62,18 @@ class SourceService {
         
         var (sorts, homeVideos) = try parseSort(jsonStr, sourceBean: sourceBean)
         
+        // type=1 源若 ac=class 无分类且无推荐列表（部分源 class 接口返回空对象），
+        // 回退到无参数默认接口（苹果CMS 返回首页视频列表），从中聚合真实分类。
+        if sourceBean.type == 1 && sorts.isEmpty && homeVideos.isEmpty {
+            if let fallbackStr = try? await network.getString(from: api) {
+                let (fSorts, fVideos) = (try? parseSort(fallbackStr, sourceBean: sourceBean)) ?? ([], [])
+                if !fSorts.isEmpty || !fVideos.isEmpty {
+                    sorts = fSorts
+                    homeVideos = fVideos
+                }
+            }
+        }
+        
         // 当大多数推荐视频的 vod_pic 为空时（ac=class 接口常见情况），
         // 额外请求列表接口获取带完整海报的推荐视频
         let picMissingCount = homeVideos.filter { $0.pic.trimmingCharacters(in: .whitespaces).isEmpty }.count
@@ -139,6 +151,26 @@ class SourceService {
                             video.sourceKey = sourceBean.key
                             homeVideos.append(video)
                         }
+                    }
+                }
+                
+                // 接口不提供 class（如部分苹果CMS 源不支持 ac=class，直接返回视频列表）时，
+                // 从推荐列表聚合出真实分类（type_id/type_name 去重），保证每个分类点开都有数据。
+                if sorts.isEmpty, let list = json["list"] as? [[String: Any]] {
+                    var seenIDs = Set<String>()
+                    var seenNames = Set<String>()
+                    for item in list {
+                        let id: String
+                        if let intId = item["type_id"] as? Int {
+                            id = String(intId)
+                        } else {
+                            id = item["type_id"] as? String ?? ""
+                        }
+                        let name = item["type_name"] as? String ?? ""
+                        guard !id.isEmpty, !name.isEmpty,
+                              seenIDs.insert(id).inserted,
+                              seenNames.insert(name).inserted else { continue }
+                        sorts.append(MovieSort.SortData(id: id, name: name))
                     }
                 }
             }
