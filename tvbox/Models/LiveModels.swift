@@ -37,6 +37,8 @@ struct LiveChannelItem: Codable, Identifiable, Hashable {
     var sourceNum: Int { channelUrls.count }
     /// 台标地址（预留）。
     var logo: String = ""
+    /// EPG 节目单地址（xmltv，可为空）。
+    var epg: String = ""
     
     init(channelName: String = "", channelIndex: Int = 0) {
         self.channelName = channelName

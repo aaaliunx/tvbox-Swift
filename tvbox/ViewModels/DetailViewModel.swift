@@ -133,6 +133,15 @@ class DetailViewModel: ObservableObject {
         }
     }
     
+    /// 用嗅探/解析出的真实播放地址直接播放（失败重试链路使用）。
+    func playSniffed(url: String) {
+        guard !url.isEmpty else { return }
+        isPlaying = true
+        playUrl = url
+        resumeSeconds = 0
+        realtimeProgressSeconds = 0
+    }
+    
     /// 应用历史续播状态并自动继续播放
     func applyPlaybackState(_ state: VodPlaybackState) {
         guard let info = vodInfo, !info.playFlags.isEmpty else { return }

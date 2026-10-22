@@ -18,7 +18,12 @@ class SourceService {
             throw SourceError.emptyApi
         }
         
-        // type=3 (JAR/Spider) 暂不支持
+        // type=3 走 Spider（JS 脚本）链路。
+        if sourceBean.type == 3 {
+            return try await SpiderService.shared.homeContent(for: sourceBean)
+        }
+        
+        // type=0/1/4 标准接口
         guard sourceBean.isSupportedInSwift else {
             throw SourceError.unsupportedType(sourceBean.typeDescription)
         }
@@ -166,6 +171,16 @@ class SourceService {
     func getList(sourceBean: SourceBean, sortData: MovieSort.SortData, page: Int = 1, filters: [String: String]? = nil) async throws -> [Movie.Video] {
         let api = sourceBean.api
         guard !api.isEmpty else { throw SourceError.emptyApi }
+        
+        // type=3 走 Spider 分类链路。
+        if sourceBean.type == 3 {
+            return try await SpiderService.shared.categoryContent(
+                for: sourceBean,
+                sort: sortData,
+                page: page
+            )
+        }
+        
         guard sourceBean.isSupportedInSwift else { throw SourceError.unsupportedType(sourceBean.typeDescription) }
         guard sourceBean.isHttpApi else { throw SourceError.invalidApiUrl(api) }
         
@@ -282,6 +297,12 @@ class SourceService {
     func getDetail(sourceBean: SourceBean, vodId: String) async throws -> VodInfo? {
         let api = sourceBean.api
         guard !api.isEmpty else { throw SourceError.emptyApi }
+        
+        // type=3 走 Spider 详情链路。
+        if sourceBean.type == 3 {
+            return try await SpiderService.shared.detailContent(for: sourceBean, vodId: vodId)
+        }
+        
         guard sourceBean.isSupportedInSwift else { throw SourceError.unsupportedType(sourceBean.typeDescription) }
         guard sourceBean.isHttpApi else { throw SourceError.invalidApiUrl(api) }
         
@@ -358,6 +379,12 @@ class SourceService {
     func search(sourceBean: SourceBean, keyword: String) async throws -> [Movie.Video] {
         let api = sourceBean.api
         guard !api.isEmpty else { throw SourceError.emptyApi }
+        
+        // type=3 走 Spider 搜索链路。
+        if sourceBean.type == 3 {
+            return try await SpiderService.shared.searchContent(for: sourceBean, keyword: keyword)
+        }
+        
         guard sourceBean.isSupportedInSwift else { throw SourceError.unsupportedType(sourceBean.typeDescription) }
         guard sourceBean.isHttpApi else { throw SourceError.invalidApiUrl(api) }
         

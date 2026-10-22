@@ -28,6 +28,8 @@ struct HawkConfig {
     static let HOME_REC_STYLE = "home_rec_style"
     static let HISTORY_NUM = "history_num"
     static let SEARCH_HISTORY = "search_history"
+    /// M3U8 播放地址净化开关。
+    static let M3U8_CLEAN = "m3u8_clean"
 }
 
 /// 通用 Swift 扩展

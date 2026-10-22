@@ -20,6 +20,10 @@ struct DetailView: View {
     #endif
     @State private var lastPersistedProgress: Double = 0
     @State private var isCollected = false
+    /// 嗅探重试状态：防止失败回调循环触发。
+    @State private var isSniffing = false
+    /// 已嗅探/已解析过的地址集合（避免重复尝试）。
+    @State private var sniffedUrls: Set<String> = []
     
     var body: some View {
         ScrollView {
@@ -31,6 +35,7 @@ struct DetailView: View {
                         startPosition: viewModel.currentPlaybackSeconds(),
                         onProgressChanged: handlePlaybackProgress,
                         onPlaybackEnded: playNextEpisodeIfNeeded,
+                        onPlaybackFailed: handlePlaybackFailed,
                         onToggleFullScreen: {
                             openFullScreenPlayer()
                         },
@@ -93,6 +98,12 @@ struct DetailView: View {
             await viewModel.loadDetail(video: video)
             restorePlaybackFromHistory()
             refreshCollectState()
+        }
+        .onReceive(RemoteControlService.playRequestNotification) { notification in
+            // 局域网遥控：播放指定地址。
+            if let url = notification.userInfo?["url"] as? String {
+                viewModel.playSniffed(url: url)
+            }
         }
         .onDisappear {
             viewModel.commitPlaybackProgressSnapshot()
@@ -539,6 +550,37 @@ struct DetailView: View {
             CacheStore.shared.addCollect(video, context: modelContext)
         }
         refreshCollectState()
+    }
+    
+    /// 播放失败自动嗅探/解析：原地址 → 嗅探候选 → 解析器。
+    /// 命中新地址后直接切换播放；未命中则交给原失败流程（若有）。
+    private func handlePlaybackFailed() {
+        guard !isSniffing else { return }
+        isSniffing = true
+        Task { @MainActor in
+            defer { isSniffing = false }
+            guard let current = viewModel.playUrl else { return }
+            // 该地址已嗅探/解析过，避免死循环。
+            if sniffedUrls.contains(current) { return }
+            
+            // 1) 嗅探候选。
+            let candidates = await SniffService.shared.sniff(from: current)
+            if let sniffed = candidates.first(where: { !sniffedUrls.contains($0) }),
+               sniffed != current {
+                sniffedUrls.insert(sniffed)
+                viewModel.playSniffed(url: sniffed)
+                return
+            }
+            
+            // 2) 尝试解析器（仅 JSON 型解析接口）。
+            if let parsed = await SniffService.shared.parseViaParser(
+                originalURL: current,
+                parseBeans: ApiConfig.shared.parseBeanList
+            ), parsed != current {
+                sniffedUrls.insert(parsed)
+                viewModel.playSniffed(url: parsed)
+            }
+        }
     }
     
     private func playNextEpisodeIfNeeded() {

@@ -42,8 +42,13 @@ struct SourceBean: Codable, Identifiable, Hashable {
     var isFilterable: Bool { filterable == 1 }
     var isQuickSearchEnabled: Bool { quickSearch == 1 }
     
-    /// 是否在 Swift 版中受支持（type=3 为 JAR/Spider，需要 Java 运行时，暂不支持）
+    /// 是否在 Swift 版中受支持。
+    /// type=0/1/4 为标准接口；type=3 为 JAR/Spider，仅当 api 是 http(s) 的 JS 脚本时可执行。
     var isSupportedInSwift: Bool {
+        if type == 3 {
+            let api = self.api.trimmingCharacters(in: .whitespacesAndNewlines)
+            return api.hasPrefix("http://") || api.hasPrefix("https://")
+        }
         return type == 0 || type == 1 || type == 4
     }
     

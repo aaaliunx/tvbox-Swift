@@ -471,6 +471,26 @@ struct LiveView: View {
                 }
             }
             
+            // EPG 当前/下一节目（仅当节目单加载到且有数据时展示）
+            if let nowProgram = viewModel.epgList.first(where: { $0.isLive }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.system(size: 11))
+                        .foregroundColor(.orange)
+                    Text("正在播出：\(nowProgram.title)")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.85))
+                        .lineLimit(1)
+                    Spacer()
+                    if let next = viewModel.epgList.first(where: { !$0.isLive }) {
+                        Text("\(next.startTime) \(next.title)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.5))
+                            .lineLimit(1)
+                    }
+                }
+            }
+            
             // 操作按钮行
             if channel.sourceNum > 1 {
                 HStack(spacing: 12) {

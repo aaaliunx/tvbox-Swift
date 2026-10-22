@@ -52,11 +52,37 @@ class SettingsViewModel: ObservableObject {
     @Published var vlcBufferMode: VLCBufferMode = .defaultMode
     /// 快进/快退步长（秒）。
     @Published var playTimeStep: Int = 10
+    /// 历史记录条数上限。
+    @Published var historyLimit: Int = 20
+    /// M3U8 地址净化开关。
+    @Published var m3u8Clean: Bool = false
+    /// 视频画面渲染缩放。
+    @Published var playScale: PlayScaleOption = .original
     /// 缓存占用展示文本。
     @Published var cacheSizeString: String = "0 KB"
     
     /// 快进步长候选项。
     let playTimeStepOptions: [Int] = [5, 10, 15, 30, 60]
+    /// 历史条数候选项。
+    let historyLimitOptions: [Int] = [5, 10, 20, 50, 100]
+    /// 画面渲染缩放选项。
+    enum PlayScaleOption: String, CaseIterable, Identifiable {
+        case original = "原图"
+        case wide169 = "16:9"
+        case ratio43 = "4:3"
+        case stretch = "拉伸"
+        
+        var id: String { rawValue }
+        
+        /// VLC aspectRatio 参数（原图/拉伸返回 nil，交给 VLC 自动处理）。
+        var vlcAspectRatio: String? {
+            switch self {
+            case .wide169: return "16:9"
+            case .ratio43: return "4:3"
+            default: return nil
+            }
+        }
+    }
     /// 当前构建可用播放器列表。
     let playerEngineOptions: [PlayerEngine] = PlayerEngine.availableEngines
     /// 解码模式候选。
@@ -105,6 +131,15 @@ class SettingsViewModel: ObservableObject {
         
         let savedStep = defaults.integer(forKey: HawkConfig.PLAY_TIME_STEP)
         playTimeStep = savedStep > 0 ? savedStep : 10
+        let savedHistoryLimit = defaults.integer(forKey: HawkConfig.HISTORY_NUM)
+        historyLimit = savedHistoryLimit > 0 ? savedHistoryLimit : 20
+        m3u8Clean = defaults.bool(forKey: HawkConfig.M3U8_CLEAN)
+        if let rawScale = defaults.string(forKey: HawkConfig.PLAY_SCALE),
+           let option = PlayScaleOption(rawValue: rawScale) {
+            playScale = option
+        } else {
+            playScale = .original
+        }
         refreshCacheSize()
     }
     

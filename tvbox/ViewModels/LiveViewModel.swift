@@ -89,11 +89,61 @@ class LiveViewModel: ObservableObject {
         return channelGroups[selectedGroupIndex].channels
     }
     
-    /// 加载 EPG 节目单
+    /// 加载 EPG 节目单（xmltv）。
+    /// 取频道自带 epg 地址，拉取后按频道名匹配当天节目。
     private func loadEPG(for channel: LiveChannelItem) {
-        // 预留：后续可在此按频道名/频道 ID 请求远程 EPG。
-        // 当前版本先清空，避免展示过期节目单。
         epgList = []
+        let epgUrl = channel.epg.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !epgUrl.isEmpty,
+              let url = URL(string: epgUrl) else { return }
+        
+        let channelKey = channel.channelName
+        Task.detached(priority: .utility) {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                let parser = EPGXMLParser()
+                parser.parse(data: data)
+                
+                let today = Self.epgTodayString()
+                let matched = parser.programmes.filter { programme in
+                    Self.epgChannelMatches(programme.channelId, channelName: channelKey)
+                        && programme.startDate == today
+                }
+                let items: [Epginfo] = matched.enumerated().map { index, programme in
+                    Epginfo(
+                        title: programme.title,
+                        startTime: programme.startTime,
+                        endTime: programme.endTime,
+                        index: index
+                    )
+                }
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    // 频道可能已切换，仅当仍是当前频道时更新。
+                    if self.currentChannel?.channelName == channelKey {
+                        self.epgList = items
+                    }
+                }
+            } catch {
+                print("EPG 加载失败: \(error)")
+            }
+        }
+    }
+    
+    /// 今天日期字符串（yyyyMMdd，本地时区）。
+    nonisolated private static func epgTodayString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd"
+        return formatter.string(from: Date())
+    }
+    
+    /// EPG 频道与配置频道名匹配：相同、互相包含（去空白与常见符号）。
+    nonisolated private static func epgChannelMatches(_ epgId: String, channelName: String) -> Bool {
+        let a = epgId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let b = channelName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if a.isEmpty || b.isEmpty { return false }
+        if a == b { return true }
+        return a.contains(b) || b.contains(a)
     }
     
     private func bindLiveChannelGroups() {

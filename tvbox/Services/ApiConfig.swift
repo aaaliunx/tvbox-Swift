@@ -733,7 +733,7 @@ class ApiConfig: ObservableObject {
             
             // 如果有内嵌频道
             if let channels = live.channels {
-                let inlineGroups = parseInlineLiveChannels(channels)
+                let inlineGroups = parseInlineLiveChannels(channels, epg: live.epg ?? "")
                 mergeLiveGroups(inlineGroups, into: &mergedGroups)
             }
         }
@@ -809,6 +809,7 @@ class ApiConfig: ObservableObject {
                             named: currentName,
                             urls: [trimmed],
                             logo: "",
+                            epg: "",
                             to: currentGroup,
                             groups: &groups
                         )
@@ -840,6 +841,7 @@ class ApiConfig: ObservableObject {
                             named: name,
                             urls: [url],
                             logo: "",
+                            epg: "",
                             to: currentGroupName,
                             groups: &groups
                         )
@@ -851,13 +853,14 @@ class ApiConfig: ObservableObject {
         return sortedGroups(from: groups)
     }
     
-    private func parseInlineLiveChannels(_ channels: [AppConfigData.LiveConfig.LiveChannelConfig]) -> [LiveChannelGroup] {
+    private func parseInlineLiveChannels(_ channels: [AppConfigData.LiveConfig.LiveChannelConfig], epg: String) -> [LiveChannelGroup] {
         var groups: [String: LiveChannelGroup] = [:]
         for channel in channels {
             appendChannel(
                 named: channel.name ?? "",
                 urls: channel.urls ?? [],
                 logo: channel.logo ?? "",
+                epg: epg,
                 to: channel.group ?? "其他",
                 groups: &groups
             )
@@ -872,6 +875,7 @@ class ApiConfig: ObservableObject {
                     named: channel.channelName,
                     urls: channel.channelUrls,
                     logo: channel.logo,
+                    epg: channel.epg,
                     to: group.groupName,
                     groups: &groups
                 )
@@ -883,6 +887,7 @@ class ApiConfig: ObservableObject {
         named channelName: String,
         urls: [String],
         logo: String,
+        epg: String,
         to groupName: String,
         groups: inout [String: LiveChannelGroup]
     ) {
@@ -918,11 +923,16 @@ class ApiConfig: ObservableObject {
             if existing.logo.isEmpty && !trimmedLogo.isEmpty {
                 existing.logo = trimmedLogo
             }
+            let trimmedEpg = epg.trimmingCharacters(in: .whitespacesAndNewlines)
+            if existing.epg.isEmpty && !trimmedEpg.isEmpty {
+                existing.epg = trimmedEpg
+            }
             group.channels[existingIndex] = existing
         } else {
             var item = LiveChannelItem(channelName: normalizedName, channelIndex: group.channels.count)
             item.channelUrls = validUrls
             item.logo = logo.trimmingCharacters(in: .whitespacesAndNewlines)
+            item.epg = epg.trimmingCharacters(in: .whitespacesAndNewlines)
             group.channels.append(item)
         }
         

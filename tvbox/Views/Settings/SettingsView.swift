@@ -29,6 +29,8 @@ struct SettingsView: View {
     @State private var showAbout = false
     @State private var sourceSearchText = ""
     @State private var showingPicker: PickerType = .none
+    /// 遥控服务状态。
+    @StateObject private var remoteControl = RemoteControlService.shared
     
     enum PickerType {
         case none
@@ -37,6 +39,8 @@ struct SettingsView: View {
         case decode
         case vlcBuffer
         case playTimeStep
+        case historyLimit
+        case playScale
     }
     
     var body: some View {
@@ -99,10 +103,25 @@ struct SettingsView: View {
                         SettingsRow(icon: "forward", title: "快进步长", value: "\(viewModel.playTimeStep)秒") {
                             showingPicker = .playTimeStep
                         }
+                        Divider().background(Color.white.opacity(0.1))
+                        SettingsRow(icon: "rectangle.dashed", title: "画面缩放", value: viewModel.playScale.rawValue) {
+                            showingPicker = .playScale
+                        }
+                        if PlayerEngine.isVLCAvailable {
+                            Divider().background(Color.white.opacity(0.1))
+                            SettingsRow(icon: "wand.and.stars", title: "M3U8净化", value: viewModel.m3u8Clean ? "开启" : "关闭") {
+                                viewModel.m3u8Clean.toggle()
+                                UserDefaults.standard.set(viewModel.m3u8Clean, forKey: HawkConfig.M3U8_CLEAN)
+                            }
+                        }
                     }
                     
                     // 功能
                     SectionCard(title: "功能") {
+                        SettingsRow(icon: "list.number", title: "历史条数", value: "\(viewModel.historyLimit)条") {
+                            showingPicker = .historyLimit
+                        }
+                        Divider().background(Color.white.opacity(0.1))
                         NavigationLink {
                             HistoryView()
                         } label: {
@@ -113,6 +132,31 @@ struct SettingsView: View {
                             FavoritesView()
                         } label: {
                             SettingsRow(icon: "heart", title: "我的收藏", value: "", action: nil)
+                        }
+                    }
+                    
+                    // 遥控
+                    SectionCard(title: "遥控服务") {
+                        SettingsRow(icon: "antenna.radiowaves.left.and.right", title: "局域网遥控", value: remoteControl.isRunning ? "已开启" : "已关闭") {
+                            if remoteControl.isRunning {
+                                remoteControl.stop()
+                            } else {
+                                remoteControl.start()
+                            }
+                        }
+                        if remoteControl.isRunning, !remoteControl.accessURL.isEmpty {
+                            Divider().background(Color.white.opacity(0.1))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("访问地址（同一 Wi-Fi 下用浏览器打开）")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.white.opacity(0.5))
+                                Text(remoteControl.accessURL)
+                                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                                    .foregroundColor(.orange)
+                                    .textSelection(.enabled)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
                         }
                     }
                     
@@ -217,6 +261,34 @@ struct SettingsView: View {
                 itemTitle: { "\($0) 秒" },
                 onSelect: { step in
                     viewModel.setPlayTimeStep(step)
+                    showingPicker = .none
+                },
+                onCancel: { showingPicker = .none }
+            )
+        case .historyLimit:
+            SelectionModal(
+                title: "历史记录条数",
+                icon: "list.number",
+                items: viewModel.historyLimitOptions,
+                selectedItem: viewModel.historyLimit,
+                itemTitle: { "\($0) 条" },
+                onSelect: { limit in
+                    viewModel.historyLimit = limit
+                    UserDefaults.standard.set(limit, forKey: HawkConfig.HISTORY_NUM)
+                    showingPicker = .none
+                },
+                onCancel: { showingPicker = .none }
+            )
+        case .playScale:
+            SelectionModal(
+                title: "画面缩放",
+                icon: "rectangle.dashed",
+                items: SettingsViewModel.PlayScaleOption.allCases,
+                selectedItem: viewModel.playScale,
+                itemTitle: { $0.rawValue },
+                onSelect: { option in
+                    viewModel.playScale = option
+                    UserDefaults.standard.set(option.rawValue, forKey: HawkConfig.PLAY_SCALE)
                     showingPicker = .none
                 },
                 onCancel: { showingPicker = .none }

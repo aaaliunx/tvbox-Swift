@@ -203,8 +203,31 @@ actor CacheStore {
             }
             
             try context.save()
+            // 按设置的历史条数上限截断，删除最旧的超出记录。
+            trimHistoryIfNeeded(context: context)
         } catch {
             print("写入播放记录失败: \(error)")
+        }
+    }
+    
+    /// 根据 HawkConfig.HISTORY_NUM 截断历史记录（0 或未设置则不限）。
+    private func trimHistoryIfNeeded(context: ModelContext) {
+        let limit = UserDefaults.standard.integer(forKey: HawkConfig.HISTORY_NUM)
+        guard limit > 0 else { return }
+        do {
+            let count = try context.fetchCount(FetchDescriptor<VodRecord>())
+            guard count > limit else { return }
+            let all = try context.fetch(
+                FetchDescriptor<VodRecord>(
+                    sortBy: [SortDescriptor(\VodRecord.updateTime, order: .reverse)]
+                )
+            )
+            for record in all.dropFirst(limit) {
+                context.delete(record)
+            }
+            try context.save()
+        } catch {
+            print("截断历史记录失败: \(error)")
         }
     }
     

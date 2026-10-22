@@ -168,6 +168,7 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
             self.isLive = isLive
             applyPlaybackRate()
             applyVolume()
+            applyAspectRatioFromSettings()
             refreshPlaybackFlags()
             emitProgress()
             return
@@ -233,6 +234,7 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         mediaPlayer.play()
         applyPlaybackRate()
         applyVolume()
+        applyAspectRatioFromSettings()
         startProgressTimer()
         currentMediaURLString = targetURLString
         currentMediaIsLive = isLive
@@ -692,6 +694,17 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
         mediaPlayer.audio?.volume = target
     }
     
+    /// 应用画面缩放设置（16:9 / 4:3 / 原图 / 拉伸）。
+    private func applyAspectRatioFromSettings() {
+        let raw = UserDefaults.standard.string(forKey: HawkConfig.PLAY_SCALE)
+        guard let raw,
+              let option = SettingsViewModel.PlayScaleOption(rawValue: raw) else {
+            mediaPlayer.videoAspectRatio = nil
+            return
+        }
+        mediaPlayer.videoAspectRatio = option.vlcAspectRatio
+    }
+    
     private func syncDecodeModeFromSettings() {
         if let decodeModeOverride {
             decodeMode = decodeModeOverride
@@ -907,6 +920,7 @@ struct VLCVodPlayerView: View {
     var startPosition: Double = 0
     var onProgressChanged: ((Double, Double?) -> Void)? = nil
     var onPlaybackEnded: (() -> Void)? = nil
+    var onPlaybackFailed: (() -> Void)? = nil
     var onToggleFullScreen: (() -> Void)? = nil
     var canPlayNext: Bool = false
     var onPlayNext: (() -> Void)? = nil
@@ -924,6 +938,10 @@ struct VLCVodPlayerView: View {
     @State private var startPlaybackTask: Task<Void, Never>?
     /// VLC 点播加载超时提示（非空时显示）。
     @State private var playbackTimeoutText: String?
+    /// 字幕轨道菜单状态。
+    @State private var showSubtitleMenu = false
+    @State private var subtitleTracks: [VLCVideoSubtitle] = []
+    @State private var currentSubtitleIndex: Int = -1
     
     private var controller: VLCPlayerController {
         sharedController ?? ownedController
@@ -1063,6 +1081,86 @@ struct VLCVodPlayerView: View {
             hideControlsTask = nil
             osdTimer?.invalidate()
         }
+        .sheet(isPresented: $showSubtitleMenu) {
+            subtitleMenu
+        }
+        .onReceive(RemoteControlService.pauseRequestNotification) { _ in
+            if controller.isPlaying {
+                controller.togglePlayback()
+            }
+        }
+        .onReceive(RemoteControlService.resumeRequestNotification) { _ in
+            if !controller.isPlaying {
+                controller.togglePlayback()
+            }
+        }
+        .onReceive(RemoteControlService.volumeRequestNotification) { notification in
+            if let level = notification.userInfo?["level"] as? Int {
+                controller.setVolume(level)
+            }
+        }
+    }
+    
+    /// 字幕轨道菜单。
+    private var subtitleMenu: some View {
+        NavigationStack {
+            List {
+                // 关闭字幕
+                Button {
+                    controller.mediaPlayer.currentVideoSubTitleIndex = -1
+                    currentSubtitleIndex = -1
+                    showSubtitleMenu = false
+                } label: {
+                    HStack {
+                        Text("关闭字幕")
+                            .foregroundColor(.white)
+                        Spacer()
+                        if currentSubtitleIndex == -1 {
+                            Image(systemName: "checkmark")
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
+                
+                ForEach(Array(subtitleTracks.enumerated()), id: \.offset) { index, track in
+                    Button {
+                        controller.mediaPlayer.currentVideoSubTitleIndex = Int32(track.index)
+                        currentSubtitleIndex = Int(track.index)
+                        showSubtitleMenu = false
+                    } label: {
+                        HStack {
+                            Text(track.title)
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                            Spacer()
+                            if currentSubtitleIndex == track.index {
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("字幕")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+        }
+        .presentationDetents([.height(320)])
+    }
+    
+    /// 刷新 VLC 字幕轨道列表。
+    private func refreshSubtitleTracks() {
+        subtitleTracks = controller.mediaPlayer.videoSubTitles ?? []
+        currentSubtitleIndex = Int(controller.mediaPlayer.currentVideoSubTitleIndex)
+    }
+    
+    /// 播放后延迟刷新字幕轨道（VLC 异步加载轨道）。
+    private func scheduleSubtitleRefresh() {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            refreshSubtitleTracks()
+        }
     }
     
     /// 单击切换控制层显示/隐藏。
@@ -1126,8 +1224,11 @@ struct VLCVodPlayerView: View {
                 isLive: false,
                 onProgressChanged: onProgressChanged,
                 onPlaybackEnded: onPlaybackEnded,
-                onPlaybackFailed: nil
+                onPlaybackFailed: {
+                    onPlaybackFailed?()
+                }
             )
+            scheduleSubtitleRefresh()
             // 超时保护：12 秒仍未开始播放则给出明确提示，避免黑屏无反馈。
             try? await Task.sleep(nanoseconds: 12_000_000_000)
             guard !Task.isCancelled else { return }
@@ -1275,7 +1376,21 @@ struct VLCVodPlayerView: View {
                 
                 Spacer()
                 
-                // 右：全屏
+                // 右：字幕菜单（仅 VLC 引擎有轨道时展示）+ 全屏
+                #if os(iOS)
+                if !subtitleTracks.isEmpty {
+                    Button {
+                        wakeUpControls()
+                        refreshSubtitleTracks()
+                        showSubtitleMenu = true
+                    } label: {
+                        Image(systemName: "captions.bubble")
+                            .font(.system(size: 14, weight: .bold))
+                            .frame(minWidth: 36, minHeight: 36)
+                    }
+                    .buttonStyle(.plain)
+                }
+                #endif
                 if let onToggleFullScreen {
                     Button {
                         wakeUpControls()
