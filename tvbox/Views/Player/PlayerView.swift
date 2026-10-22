@@ -22,6 +22,35 @@ struct PlatformVideoPlayer: View {
     }
 }
 
+#if os(iOS)
+import AVKit
+
+/// 官方 AVPlayerViewController 包装（全屏播放内核）：
+/// 控制条位于横屏底部、自带双击手势/进度条、适配系统全屏方向，
+/// 用于全屏页的系统播放器引擎，替代自绘布局错乱问题。
+struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
+    let player: AVPlayer?
+    var showsControls: Bool = true
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        let vc = AVPlayerViewController()
+        vc.player = player
+        vc.showsPlaybackControls = showsControls
+        vc.allowsPictureInPicturePlayback = false
+        return vc
+    }
+
+    func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
+        if uiViewController.player !== player {
+            uiViewController.player = player
+        }
+        if uiViewController.showsPlaybackControls != showsControls {
+            uiViewController.showsPlaybackControls = showsControls
+        }
+    }
+}
+#endif
+
 #if os(macOS)
 private struct MacOSPlayerView: NSViewRepresentable {
     let player: AVPlayer
@@ -50,8 +79,8 @@ private struct MacOSPlayerView: NSViewRepresentable {
 /// 系统播放器会话控制器：用于在页面内联与全屏视图间复用同一 AVPlayer，避免重复拉流
 @MainActor
 final class SystemPlayerSessionController: ObservableObject {
-    fileprivate var player: AVPlayer?
-    fileprivate var mediaURLString: String?
+    var player: AVPlayer?
+    var mediaURLString: String?
     
     func setPlayer(_ newPlayer: AVPlayer, urlString: String) {
         if player !== newPlayer {

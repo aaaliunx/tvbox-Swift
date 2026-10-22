@@ -689,33 +689,62 @@ struct FullScreenPlayerView: View {
     @Environment(\.dismiss) private var dismiss
     /// 左右横屏方向标记（用于旋转按钮切换 landscapeLeft/Right）。
     @State private var isLandscapeLeft = false
+    @AppStorage(HawkConfig.PLAY_TYPE_VOD) private var vodPlayTypeRaw = -1
+    @AppStorage(HawkConfig.PLAY_TYPE) private var legacyPlayTypeRaw = PlayerEngine.system.rawValue
+    
+    private var selectedEngine: PlayerEngine {
+        let defaults = UserDefaults.standard
+        let rawValue: Int
+        if defaults.object(forKey: HawkConfig.PLAY_TYPE_VOD) != nil {
+            rawValue = vodPlayTypeRaw
+        } else if defaults.object(forKey: HawkConfig.PLAY_TYPE) != nil {
+            rawValue = legacyPlayTypeRaw
+        } else {
+            rawValue = PlayerEngine.system.rawValue
+        }
+        return PlayerEngine.fromStoredValue(rawValue)
+    }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                PlayerView(
-                    urlString: urlString,
-                    startPosition: startPosition,
-                    onProgressChanged: onProgressChanged,
-                    onPlaybackEnded: onPlaybackEnded,
-                    onToggleFullScreen: {
-                        if let onCloseRequested {
-                            onCloseRequested()
-                        } else {
-                            dismiss()
-                        }
-                    },
-                    canPlayNext: canPlayNext,
-                    onPlayNext: onPlayNext,
-                    systemController: systemController,
-                    vlcController: vlcController
-                )
-                .ignoresSafeArea()
+            #if os(iOS)
+            if selectedEngine == .system {
+                // 系统引擎：官方 AVPlayerViewController（控制条横屏底部、手势齐全）。
+                if let player = systemController?.player {
+                    AVPlayerViewControllerRepresentable(player: player)
+                        .ignoresSafeArea()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else {
+            #else
+            if true {
+            #endif
+                // VLC 引擎（macOS 也走此路径）：复用页面播放器实例。
+                VStack(spacing: 0) {
+                    PlayerView(
+                        urlString: urlString,
+                        startPosition: startPosition,
+                        onProgressChanged: onProgressChanged,
+                        onPlaybackEnded: onPlaybackEnded,
+                        onToggleFullScreen: {
+                            if let onCloseRequested {
+                                onCloseRequested()
+                            } else {
+                                dismiss()
+                            }
+                        },
+                        canPlayNext: canPlayNext,
+                        onPlayNext: onPlayNext,
+                        systemController: systemController,
+                        vlcController: vlcController
+                    )
+                    .ignoresSafeArea()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 16) {
                     #if os(iOS)

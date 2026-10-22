@@ -850,8 +850,9 @@ struct LiveFullScreenPlayerView: View {
 
             VStack(spacing: 0) {
                 if useSystemEngine {
+                    // 系统引擎：官方 AVPlayerViewController（控制条横屏底部、手势齐全）。
                     if let systemPlayer {
-                        PlatformVideoPlayer(player: systemPlayer)
+                        AVPlayerViewControllerRepresentable(player: systemPlayer)
                             .ignoresSafeArea()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
