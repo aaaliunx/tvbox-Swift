@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import AVFoundation
 #if os(macOS)
 import AppKit
 #endif
@@ -713,7 +714,7 @@ struct FullScreenPlayerView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             #if os(iOS)
-            // 悬浮按钮隐藏时的手势层：左侧滑亮度、右侧滑音量、单击唤出、长按倍速。
+            // 悬浮按钮隐藏时的手势层：水平快进/后退、左亮度右音量、单击唤出、长按倍速。
             if !controlsVisible {
                 FullScreenGestureLayer(
                     onBrightness: { translation in
@@ -736,27 +737,25 @@ struct FullScreenPlayerView: View {
                         SystemVolumeController.shared.setVolume(target)
                         showOSD("音量 \(Int(target * 100))%")
                     },
+                    onSeek: { offset in
+                        seekInFullScreen(by: offset)
+                    },
                     onTap: { showControls() },
                     onLongPressBegan: {
-                        // 长按画面倍速 2x，松手恢复原速。
-                        if let player = systemController?.player {
-                            player.rate = 2.0
-                            showOSD("倍速 2.0x")
-                        }
+                        beginLongPressSpeed(player: systemController?.player)
                     },
                     onLongPressEnded: {
-                        if let player = systemController?.player {
-                            player.rate = player.defaultRate
-                        }
+                        endLongPressSpeed(player: systemController?.player)
                     },
                     onDragEnded: {
                         brightnessGestureStart = nil
                         volumeGestureStart = nil
+                        seekStartTime = nil
                     }
                 )
             }
 
-            // 亮度/音量调节提示
+            // 亮度/音量/倍速调节提示
             if let osdText {
                 Text(osdText)
                     .font(.system(size: 16, weight: .semibold))
@@ -770,10 +769,19 @@ struct FullScreenPlayerView: View {
             }
             #endif
 
-            // 悬浮按钮（自动隐藏，单击唤出）
+            // 悬浮按钮（自动隐藏，单击唤出）：播放/暂停 + 左右翻转 + 退出全屏
             VStack {
                 HStack(spacing: 16) {
                     #if os(iOS)
+                    // 播放/暂停（系统引擎）
+                    Button {
+                        showControls()
+                        togglePlayPauseInFullScreen()
+                    } label: {
+                        Image(systemName: isFullScreenPlaying ? "pause.fill" : "play.fill")
+                            .font(.title3)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
                     // 左右翻转横屏（系统方向请求 + 设备方向兜底）
                     Button {
                         showControls()
@@ -847,6 +855,83 @@ struct FullScreenPlayerView: View {
     /// 亮度/音量手势起点快照（滑动期间基准值，避免闭环抖动）。
     @State private var brightnessGestureStart: CGFloat?
     @State private var volumeGestureStart: Float?
+    /// 水平 seek 手势起点时间快照。
+    @State private var seekStartTime: Double?
+    /// 长按倍速递增任务与当前倍速。
+    @State private var longPressSpeedTask: Task<Void, Never>?
+    @State private var longPressSpeed: Float = 2.0
+    /// 播放状态（悬浮按钮图标）。
+    @State private var isFullScreenPlaying = true
+
+    // MARK: - 全屏播放控制
+
+    private func togglePlayPauseInFullScreen() {
+        guard let player = systemController?.player else { return }
+        if player.rate == 0 {
+            player.playImmediately(atRate: player.defaultRate)
+            isFullScreenPlaying = true
+            showOSD("播放")
+        } else {
+            player.pause()
+            isFullScreenPlaying = false
+            showOSD("暂停")
+        }
+    }
+
+    private func seekInFullScreen(by offset: Double) {
+        guard let player = systemController?.player else { return }
+        if seekStartTime == nil {
+            seekStartTime = player.currentTime().seconds
+        }
+        let wasPlaying = player.rate != 0
+        var target = (seekStartTime ?? 0) + offset
+        if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 {
+            target = min(max(target, 0), d)
+        }
+        player.seek(to: CMTime(seconds: max(target, 0), preferredTimescale: 600)) { _ in
+            if wasPlaying {
+                player.playImmediately(atRate: player.defaultRate)
+            }
+        }
+        showOSD(formatFullScreenTime(target))
+        isFullScreenPlaying = player.timeControlStatus == .playing
+    }
+
+    /// 长按倍速：2x 起步，按住每 0.9s 提升一档，最高 6x。
+    private func beginLongPressSpeed(player: AVPlayer?) {
+        guard let player else { return }
+        longPressSpeed = 2.0
+        player.rate = 2.0
+        showOSD("倍速 2.0x")
+        longPressSpeedTask?.cancel()
+        let task = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                guard !Task.isCancelled else { return }
+                longPressSpeed = min(longPressSpeed + 1.0, 6.0)
+                player.rate = longPressSpeed
+                showOSD("倍速 \(String(format: "%.0f", longPressSpeed))x")
+            }
+        }
+        longPressSpeedTask = task
+    }
+
+    private func endLongPressSpeed(player: AVPlayer?) {
+        longPressSpeedTask?.cancel()
+        longPressSpeedTask = nil
+        guard let player else { return }
+        player.rate = player.defaultRate
+        isFullScreenPlaying = player.timeControlStatus == .playing
+    }
+
+    private func formatFullScreenTime(_ seconds: Double) -> String {
+        let total = Int(max(0, seconds))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
+        return String(format: "%02d:%02d", m, s)
+    }
 
     private func showControls() {
         withAnimation(.easeOut(duration: 0.2)) {

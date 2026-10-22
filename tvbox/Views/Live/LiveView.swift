@@ -876,7 +876,7 @@ struct LiveFullScreenPlayerView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // 悬浮按钮隐藏时的手势层：左侧滑亮度、右侧滑音量、单击唤出、长按倍速。
+            // 悬浮按钮隐藏时的手势层：左亮度右音量、单击唤出、长按倍速（直播无 seek）。
             if !controlsVisible {
                 FullScreenGestureLayer(
                     onBrightness: { translation in
@@ -899,16 +899,11 @@ struct LiveFullScreenPlayerView: View {
                     },
                     onTap: { showControls() },
                     onLongPressBegan: {
-                        // 长按画面倍速 2x，松手恢复原速。
-                        if let player = systemPlayer {
-                            player.rate = 2.0
-                            showOSD("倍速 2.0x")
-                        }
+                        // 长按画面倍速：2x 起步，按住递增，最高 6x。
+                        beginLiveLongPressSpeed()
                     },
                     onLongPressEnded: {
-                        if let player = systemPlayer {
-                            player.rate = player.defaultRate
-                        }
+                        endLiveLongPressSpeed()
                     },
                     onDragEnded: {
                         brightnessGestureStart = nil
@@ -930,9 +925,18 @@ struct LiveFullScreenPlayerView: View {
                     .allowsHitTesting(false)
             }
 
-            // 悬浮按钮（自动隐藏，单击唤出）
+            // 悬浮按钮（自动隐藏，单击唤出）：播放/暂停 + 左右翻转 + 退出全屏
             VStack {
                 HStack(spacing: 16) {
+                    // 播放/暂停（系统引擎）
+                    Button {
+                        showControls()
+                        toggleLivePlayPause()
+                    } label: {
+                        Image(systemName: isLivePlaying ? "pause.fill" : "play.fill")
+                            .font(.title3)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
                     // 左右翻转横屏（系统方向请求 + 设备方向兜底）
                     Button {
                         showControls()
@@ -999,6 +1003,53 @@ struct LiveFullScreenPlayerView: View {
     /// 亮度/音量手势起点快照（滑动期间基准值，避免闭环抖动）。
     @State private var brightnessGestureStart: CGFloat?
     @State private var volumeGestureStart: Float?
+    /// 长按倍速递增任务与当前倍速。
+    @State private var longPressSpeedTask: Task<Void, Never>?
+    @State private var longPressSpeed: Float = 2.0
+    /// 播放状态（悬浮按钮图标）。
+    @State private var isLivePlaying = true
+
+    // MARK: - 全屏播放控制
+
+    private func toggleLivePlayPause() {
+        guard let player = systemPlayer else { return }
+        if player.rate == 0 {
+            player.playImmediately(atRate: player.defaultRate)
+            isLivePlaying = true
+            showOSD("播放")
+        } else {
+            player.pause()
+            isLivePlaying = false
+            showOSD("暂停")
+        }
+    }
+
+    /// 长按倍速：2x 起步，按住每 0.9s 提升一档，最高 6x。
+    private func beginLiveLongPressSpeed() {
+        guard let player = systemPlayer else { return }
+        longPressSpeed = 2.0
+        player.rate = 2.0
+        showOSD("倍速 2.0x")
+        longPressSpeedTask?.cancel()
+        let task = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                guard !Task.isCancelled else { return }
+                longPressSpeed = min(longPressSpeed + 1.0, 6.0)
+                player.rate = longPressSpeed
+                showOSD("倍速 \(String(format: "%.0f", longPressSpeed))x")
+            }
+        }
+        longPressSpeedTask = task
+    }
+
+    private func endLiveLongPressSpeed() {
+        longPressSpeedTask?.cancel()
+        longPressSpeedTask = nil
+        guard let player = systemPlayer else { return }
+        player.rate = player.defaultRate
+        isLivePlaying = player.timeControlStatus == .playing
+    }
 
     private func showControls() {
         withAnimation(.easeOut(duration: 0.2)) {

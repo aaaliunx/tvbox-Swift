@@ -71,11 +71,14 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
 
 import MediaPlayer
 
-/// 全屏页手势层：左侧垂直滑动调亮度、右侧垂直滑动调音量、单击唤出悬浮按钮、
-/// 长按画面倍速播放（松手恢复）。仅在悬浮按钮隐藏时叠加，避免遮挡播放器控制条。
+/// 全屏页手势层：水平滑动快进/快退、左侧垂直滑动调亮度、右侧垂直滑动调音量、
+/// 单击唤出悬浮按钮、长按画面倍速播放（松手恢复）。
+/// 仅在悬浮按钮隐藏时叠加，避免遮挡播放器控制条。
 struct FullScreenGestureLayer: View {
     let onBrightness: (CGSize) -> Void
     let onVolume: (CGSize) -> Void
+    /// 水平滑动快进/快退偏移（秒），直播无 seek 时传 nil。
+    var onSeek: ((Double) -> Void)? = nil
     let onTap: () -> Void
     let onLongPressBegan: () -> Void
     let onLongPressEnded: () -> Void
@@ -88,11 +91,19 @@ struct FullScreenGestureLayer: View {
                 .gesture(
                     DragGesture(minimumDistance: 8)
                         .onChanged { value in
-                            let startX = value.startLocation.x
-                            if startX < geometry.size.width * 0.5 {
-                                onBrightness(value.translation)
+                            let absW = abs(value.translation.width)
+                            let absH = abs(value.translation.height)
+                            if absW > absH && absW > 12, let onSeek {
+                                // 水平滑动：滑满全屏 ≈ 180 秒
+                                let offset = Double(value.translation.width / geometry.size.width) * 180.0
+                                onSeek(offset)
                             } else {
-                                onVolume(value.translation)
+                                let startX = value.startLocation.x
+                                if startX < geometry.size.width * 0.5 {
+                                    onBrightness(value.translation)
+                                } else {
+                                    onVolume(value.translation)
+                                }
                             }
                         }
                         .onEnded { _ in
@@ -102,9 +113,9 @@ struct FullScreenGestureLayer: View {
                 .onTapGesture {
                     onTap()
                 }
-                // 长按 0.4s 开始倍速，松手（或长按后拖动结束）恢复原速。
+                // 长按 0.6s 开始倍速，按住期间每 0.9s 提升一档（最高 6x），松手恢复原速。
                 .gesture(
-                    LongPressGesture(minimumDuration: 0.4)
+                    LongPressGesture(minimumDuration: 0.6)
                         .sequenced(before: DragGesture(minimumDistance: 0))
                         .onChanged { value in
                             if case .first(true) = value {
