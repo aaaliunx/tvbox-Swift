@@ -3,6 +3,11 @@ name: Build iOS IPA
 on:
   workflow_dispatch:
 
+# 并发锁：同一时间只构建最新一次触发，旧触发自动取消，避免排队积压。
+concurrency:
+  group: ios-build-ipa
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
