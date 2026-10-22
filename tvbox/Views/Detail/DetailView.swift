@@ -710,16 +710,77 @@ struct FullScreenPlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            fullScreenPlayerBody
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
             #if os(iOS)
-            // 悬浮按钮隐藏时的手势层：水平快进/后退、左亮度右音量、单击唤出、长按倍速。
+            if selectedEngine == .system {
+                // 系统引擎：官方 AVPlayerViewController 内核，
+                // 腾讯风格控制条已集成在播放器内部（customOverlay），
+                // 不再有外部悬浮按钮/手势层。
+                if let player = systemController?.player {
+                    AVPlayerViewControllerRepresentable(
+                        player: player,
+                        isPlaying: isFullScreenPlaying,
+                        currentRate: currentFullScreenRate,
+                        onPlayPause: { togglePlayPauseInFullScreen() },
+                        onRotate: { rotateFullScreen() },
+                        onClose: { closeFullScreen() },
+                        onLongPressBegan: { beginLongPressSpeed(player: player) },
+                        onLongPressEnded: { endLongPressSpeed(player: player) },
+                        onViewAppeared: {
+                            // 播放控制器真正呈现后强制横屏（比 SwiftUI onAppear 更可靠）。
+                            DeviceOrientation.forceLandscape()
+                        }
+                    )
+                    .ignoresSafeArea()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Color.black
+                }
+            } else {
+                // VLC 引擎：保留页面播放器实例 + 自绘控制。
+                ZStack {
+                    inlinePlayer
+                    vlcOverlayControls
+                }
+            }
+            #else
+            inlinePlayer
+            #endif
+        }
+        .ignoresSafeArea()
+        #if os(iOS)
+        .statusBarHidden(true)
+        // 全屏即横屏：系统几何更新 + 设备方向双保险（Info.plist 已声明横屏）。
+        // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制横屏。
+        .onAppear {
+            showControls()
+            // 转场期间多次尝试，确保方向落地。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                DeviceOrientation.forceLandscape()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                DeviceOrientation.forceLandscape()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                DeviceOrientation.forceLandscape()
+            }
+        }
+        .onDisappear {
+            DeviceOrientation.forcePortrait()
+            hideControlsTask?.cancel()
+            endLongPressSpeed(player: systemController?.player)
+        }
+        #endif
+    }
+
+    // MARK: - VLC 引擎全屏自绘控制（系统引擎已在播放器内核内集成）
+
+    @ViewBuilder
+    private var vlcOverlayControls: some View {
+        ZStack {
+            #if os(iOS)
             if !controlsVisible {
                 FullScreenGestureLayer(
                     onBrightness: { translation in
-                        // 手势开始时快照基准值，滑动期间用基准+累计偏移，
-                        // 避免"读取-设置"闭环导致抖动。
                         if brightnessGestureStart == nil {
                             brightnessGestureStart = UIScreen.main.brightness
                         }
@@ -751,13 +812,11 @@ struct FullScreenPlayerView: View {
                         brightnessGestureStart = nil
                         volumeGestureStart = nil
                         seekStartTime = nil
-                        // 兜底：任何拖动手势结束都确保倍速恢复（防止长按任务残留）。
                         endLongPressSpeed(player: systemController?.player)
                     }
                 )
             }
 
-            // 亮度/音量/倍速调节提示
             if let osdText {
                 Text(osdText)
                     .font(.system(size: 16, weight: .semibold))
@@ -771,13 +830,11 @@ struct FullScreenPlayerView: View {
             }
             #endif
 
-            // 悬浮按钮（自动隐藏，单击唤出）：播放/暂停 + 左右翻转 + 退出全屏。
-            // 位于底部播放器控制栏区域（集成到控制栏，非顶部悬浮）。
+            // VLC 引擎控制栏（底部）
             VStack {
                 Spacer()
                 HStack(spacing: 16) {
                     #if os(iOS)
-                    // 播放/暂停（系统引擎）
                     Button {
                         showControls()
                         togglePlayPauseInFullScreen()
@@ -786,28 +843,17 @@ struct FullScreenPlayerView: View {
                             .font(.title3)
                             .foregroundColor(.white.opacity(0.8))
                     }
-                    // 左右翻转横屏（系统方向请求 + 设备方向兜底）
                     Button {
                         showControls()
-                        isLandscapeLeft.toggle()
-                        if isLandscapeLeft {
-                            DeviceOrientation.forceLandscapeLeft()
-                        } else {
-                            DeviceOrientation.forceLandscapeRight()
-                        }
+                        rotateFullScreen()
                     } label: {
                         Image(systemName: "rectangle.landscape.rotate")
                             .font(.title3)
                             .foregroundColor(.white.opacity(0.8))
                     }
                     #endif
-                    // 退出全屏
                     Button {
-                        if let onCloseRequested {
-                            onCloseRequested()
-                        } else {
-                            dismiss()
-                        }
+                        closeFullScreen()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.title2)
@@ -825,30 +871,30 @@ struct FullScreenPlayerView: View {
             .padding(.trailing, 16)
             .allowsHitTesting(controlsVisible)
         }
-        .ignoresSafeArea()
-        #if os(iOS)
-        .statusBarHidden(true)
-        // 全屏即横屏：系统几何更新 + 设备方向双保险（Info.plist 已声明横屏）。
-        // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制横屏。
-        .onAppear {
-            showControls()
-            // 转场期间多次尝试，确保方向落地。
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                DeviceOrientation.forceLandscape()
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                DeviceOrientation.forceLandscape()
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                DeviceOrientation.forceLandscape()
-            }
+    }
+
+    private func rotateFullScreen() {
+        isLandscapeLeft.toggle()
+        if isLandscapeLeft {
+            DeviceOrientation.forceLandscapeLeft()
+        } else {
+            DeviceOrientation.forceLandscapeRight()
         }
-        .onDisappear {
-            DeviceOrientation.forcePortrait()
-            hideControlsTask?.cancel()
-            endLongPressSpeed(player: systemController?.player)
+    }
+
+    private func closeFullScreen() {
+        if let onCloseRequested {
+            onCloseRequested()
+        } else {
+            dismiss()
         }
-        #endif
+    }
+
+    /// 当前播放倍速（传给内核控制条显示；暂停时 rate=0 回退到 defaultRate）。
+    private var currentFullScreenRate: Float {
+        guard let player = systemController?.player else { return 1.0 }
+        let r = player.rate
+        return r > 0 ? r : player.defaultRate
     }
 
     // MARK: - 悬浮按钮显隐
@@ -958,32 +1004,6 @@ struct FullScreenPlayerView: View {
                 osdOpacity = 0
             }
         }
-    }
-
-    /// 全屏播放器主体：iOS 系统引擎用官方 AVPlayerViewController，
-    /// VLC 引擎与 macOS 使用页面播放器实例（复用不重新加载）。
-    @ViewBuilder
-    private var fullScreenPlayerBody: some View {
-        #if os(iOS)
-        if selectedEngine == .system {
-            if let player = systemController?.player {
-                AVPlayerViewControllerRepresentable(
-                    player: player,
-                    onViewAppeared: {
-                        // 播放控制器真正呈现后强制横屏（比 SwiftUI onAppear 更可靠）。
-                        DeviceOrientation.forceLandscape()
-                    }
-                )
-                .ignoresSafeArea()
-            } else {
-                Color.black
-            }
-        } else {
-            inlinePlayer
-        }
-        #else
-        inlinePlayer
-        #endif
     }
 
     private var inlinePlayer: some View {

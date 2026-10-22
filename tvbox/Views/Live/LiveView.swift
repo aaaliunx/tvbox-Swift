@@ -848,21 +848,29 @@ struct LiveFullScreenPlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                if useSystemEngine {
-                    // 系统引擎：官方 AVPlayerViewController（控制条横屏底部、手势齐全）。
-                    if let systemPlayer {
-                        AVPlayerViewControllerRepresentable(
-                            player: systemPlayer,
-                            onViewAppeared: {
-                                // 播放控制器真正呈现后强制横屏（比 SwiftUI onAppear 更可靠）。
-                                DeviceOrientation.forceLandscape()
-                            }
-                        )
-                        .ignoresSafeArea()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                } else if !urlString.isEmpty {
+            if useSystemEngine {
+                // 系统引擎：官方 AVPlayerViewController 内核 + 腾讯风格控制条
+                // 已集成在播放器内部（customOverlay）。
+                if let systemPlayer {
+                    AVPlayerViewControllerRepresentable(
+                        player: systemPlayer,
+                        isPlaying: isLivePlaying,
+                        currentRate: liveFullScreenRate(systemPlayer),
+                        onPlayPause: { toggleLivePlayPause() },
+                        onRotate: { rotateLiveFullScreen() },
+                        onClose: { dismiss() },
+                        onLongPressBegan: { beginLiveLongPressSpeed() },
+                        onLongPressEnded: { endLiveLongPressSpeed() },
+                        onViewAppeared: {
+                            // 播放控制器真正呈现后强制横屏（比 SwiftUI onAppear 更可靠）。
+                            DeviceOrientation.forceLandscape()
+                        }
+                    )
+                    .ignoresSafeArea()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else if !urlString.isEmpty {
+                ZStack {
                     VLCLivePlayerView(
                         urlString: urlString,
                         sharedController: sharedController,
@@ -872,108 +880,9 @@ struct LiveFullScreenPlayerView: View {
                     )
                     .ignoresSafeArea()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    liveVlcOverlayControls
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // 悬浮按钮隐藏时的手势层：左亮度右音量、单击唤出、长按倍速（直播无 seek）。
-            if !controlsVisible {
-                FullScreenGestureLayer(
-                    onBrightness: { translation in
-                        if brightnessGestureStart == nil {
-                            brightnessGestureStart = UIScreen.main.brightness
-                        }
-                        let delta = -translation.height / 800.0
-                        let target = min(max((brightnessGestureStart ?? 0.5) + delta, 0), 1)
-                        UIScreen.main.brightness = target
-                        showOSD("亮度 \(Int(target * 100))%")
-                    },
-                    onVolume: { translation in
-                        if volumeGestureStart == nil {
-                            volumeGestureStart = SystemVolumeController.shared.currentVolume()
-                        }
-                        let delta = -translation.height / 800.0
-                        let target = min(max((volumeGestureStart ?? 0.5) + Float(delta), 0), 1)
-                        SystemVolumeController.shared.setVolume(target)
-                        showOSD("音量 \(Int(target * 100))%")
-                    },
-                    onTap: { showControls() },
-                    onLongPressBegan: {
-                        // 长按画面倍速：2x 起步，按住递增，最高 6x。
-                        beginLiveLongPressSpeed()
-                    },
-                    onLongPressEnded: {
-                        endLiveLongPressSpeed()
-                    },
-                    onDragEnded: {
-                        brightnessGestureStart = nil
-                        volumeGestureStart = nil
-                        // 兜底：任何拖动手势结束都确保倍速恢复（防止长按任务残留）。
-                        endLiveLongPressSpeed()
-                    }
-                )
-            }
-
-            // 亮度/音量调节提示
-            if let osdText {
-                Text(osdText)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .opacity(osdOpacity)
-                    .allowsHitTesting(false)
-            }
-
-            // 悬浮按钮（自动隐藏，单击唤出）：播放/暂停 + 左右翻转 + 退出全屏。
-            // 位于底部播放器控制栏区域（集成到控制栏，非顶部悬浮）。
-            VStack {
-                Spacer()
-                HStack(spacing: 16) {
-                    // 播放/暂停（系统引擎）
-                    Button {
-                        showControls()
-                        toggleLivePlayPause()
-                    } label: {
-                        Image(systemName: isLivePlaying ? "pause.fill" : "play.fill")
-                            .font(.title3)
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-                    // 左右翻转横屏（系统方向请求 + 设备方向兜底）
-                    Button {
-                        showControls()
-                        isLandscapeLeft.toggle()
-                        if isLandscapeLeft {
-                            DeviceOrientation.forceLandscapeLeft()
-                        } else {
-                            DeviceOrientation.forceLandscapeRight()
-                        }
-                    } label: {
-                        Image(systemName: "rectangle.landscape.rotate")
-                            .font(.title3)
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-                    // 退出全屏
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 10)
-                .background(Color.black.opacity(0.45), in: Capsule())
-                .opacity(controlsVisible ? 1 : 0)
-                .animation(.easeInOut(duration: 0.25), value: controlsVisible)
-                .padding(.bottom, 16)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            .padding(.trailing, 16)
-            .allowsHitTesting(controlsVisible)
         }
         .ignoresSafeArea()
         .statusBarHidden(true)
@@ -997,6 +906,116 @@ struct LiveFullScreenPlayerView: View {
             hideControlsTask?.cancel()
             endLiveLongPressSpeed()
         }
+    }
+
+    // MARK: - VLC 引擎全屏自绘控制（系统引擎已在播放器内核内集成）
+
+    @ViewBuilder
+    private var liveVlcOverlayControls: some View {
+        ZStack {
+            // 悬浮按钮隐藏时的手势层：左亮度右音量、单击唤出、长按倍速（直播无 seek）。
+            if !controlsVisible {
+                FullScreenGestureLayer(
+                    onBrightness: { translation in
+                        if brightnessGestureStart == nil {
+                            brightnessGestureStart = UIScreen.main.brightness
+                        }
+                        let delta = -translation.height / 800.0
+                        let target = min(max((brightnessGestureStart ?? 0.5) + delta, 0), 1)
+                        UIScreen.main.brightness = target
+                        showOSD("亮度 \(Int(target * 100))%")
+                    },
+                    onVolume: { translation in
+                        if volumeGestureStart == nil {
+                            volumeGestureStart = SystemVolumeController.shared.currentVolume()
+                        }
+                        let delta = -translation.height / 800.0
+                        let target = min(max((volumeGestureStart ?? 0.5) + Float(delta), 0), 1)
+                        SystemVolumeController.shared.setVolume(target)
+                        showOSD("音量 \(Int(target * 100))%")
+                    },
+                    onTap: { showControls() },
+                    onLongPressBegan: {
+                        beginLiveLongPressSpeed()
+                    },
+                    onLongPressEnded: {
+                        endLiveLongPressSpeed()
+                    },
+                    onDragEnded: {
+                        brightnessGestureStart = nil
+                        volumeGestureStart = nil
+                        endLiveLongPressSpeed()
+                    }
+                )
+            }
+
+            // 亮度/音量调节提示
+            if let osdText {
+                Text(osdText)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .opacity(osdOpacity)
+                    .allowsHitTesting(false)
+            }
+
+            // VLC 引擎控制栏（底部）：播放/暂停 + 旋转 + 退出。
+            VStack {
+                Spacer()
+                HStack(spacing: 16) {
+                    Button {
+                        showControls()
+                        toggleLivePlayPause()
+                    } label: {
+                        Image(systemName: isLivePlaying ? "pause.fill" : "play.fill")
+                            .font(.title3)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    Button {
+                        showControls()
+                        rotateLiveFullScreen()
+                    } label: {
+                        Image(systemName: "rectangle.landscape.rotate")
+                            .font(.title3)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(Color.black.opacity(0.45), in: Capsule())
+                .opacity(controlsVisible ? 1 : 0)
+                .animation(.easeInOut(duration: 0.25), value: controlsVisible)
+                .padding(.bottom, 16)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .padding(.trailing, 16)
+            .allowsHitTesting(controlsVisible)
+        }
+    }
+
+    private func rotateLiveFullScreen() {
+        isLandscapeLeft.toggle()
+        if isLandscapeLeft {
+            DeviceOrientation.forceLandscapeLeft()
+        } else {
+            DeviceOrientation.forceLandscapeRight()
+        }
+    }
+
+    /// 当前直播倍速（暂停时 rate=0 回退到 defaultRate）。
+    private func liveFullScreenRate(_ player: AVPlayer) -> Float {
+        let r = player.rate
+        return r > 0 ? r : player.defaultRate
     }
 
     // MARK: - 悬浮按钮显隐

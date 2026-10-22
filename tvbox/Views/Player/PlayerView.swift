@@ -25,17 +25,44 @@ struct PlatformVideoPlayer: View {
 #if os(iOS)
 import AVKit
 
-/// 官方 AVPlayerViewController 包装（全屏播放内核）：
-/// 控制条位于横屏底部、自带双击手势/进度条、适配系统全屏方向，
-/// 用于全屏页的系统播放器引擎，替代自绘布局错乱问题。
+/// 播放器 overlay 数据模型：承载回调与播放状态，供内嵌控制条（customOverlay）使用。
+@MainActor
+final class PlayerOverlayModel: ObservableObject {
+    weak var player: AVPlayer?
+    @Published var isPlaying = true
+    @Published var currentRate: Float = 1.0
+    var onPlayPause: (() -> Void)? = nil
+    var onRotate: (() -> Void)? = nil
+    var onClose: (() -> Void)? = nil
+    var onSeekBy: ((Double) -> Void)? = nil
+    var onBrightness: ((CGSize) -> Void)? = nil
+    var onVolume: ((CGSize) -> Void)? = nil
+    var onLongPressBegan: (() -> Void)? = nil
+    var onLongPressEnded: (() -> Void)? = nil
+}
+
+/// 官方 AVPlayerViewController 包装（全屏播放内核）+ 腾讯风格内嵌控制条：
+/// 关闭系统控制条，用 customOverlayViewController 承载自绘控制栏与手势层，
+/// 完全集成在播放器内核内部（不再有外部悬浮按钮）。
 struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     let player: AVPlayer?
-    var showsControls: Bool = true
+    var isPlaying: Bool = true
+    var currentRate: Float = 1.0
+    var onPlayPause: (() -> Void)? = nil
+    var onRotate: (() -> Void)? = nil
+    var onClose: (() -> Void)? = nil
+    var onSeekBy: ((Double) -> Void)? = nil
+    var onBrightness: ((CGSize) -> Void)? = nil
+    var onVolume: ((CGSize) -> Void)? = nil
+    var onLongPressBegan: (() -> Void)? = nil
+    var onLongPressEnded: (() -> Void)? = nil
     /// 播放控制器视图已加入窗口、转场基本完成后回调（用于方向强制落地）。
     var onViewAppeared: (() -> Void)? = nil
 
     final class Coordinator {
         var onViewAppeared: (() -> Void)?
+        let model = PlayerOverlayModel()
+        var hosting: UIHostingController<TencentStylePlayerOverlay>?
         init(onViewAppeared: (() -> Void)?) {
             self.onViewAppeared = onViewAppeared
         }
@@ -48,8 +75,29 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let vc = AVPlayerViewController()
         vc.player = player
-        vc.showsPlaybackControls = showsControls
+        vc.showsPlaybackControls = false
         vc.allowsPictureInPicturePlayback = false
+
+        // 腾讯风格控制条直接内嵌到播放器内核（customOverlayViewController，iOS 15+）。
+        let model = context.coordinator.model
+        model.player = player
+        model.isPlaying = isPlaying
+        model.currentRate = currentRate
+        model.onPlayPause = onPlayPause
+        model.onRotate = onRotate
+        model.onClose = onClose
+        model.onSeekBy = onSeekBy
+        model.onBrightness = onBrightness
+        model.onVolume = onVolume
+        model.onLongPressBegan = onLongPressBegan
+        model.onLongPressEnded = onLongPressEnded
+        if #available(iOS 15.0, *) {
+            let hosting = UIHostingController(rootView: TencentStylePlayerOverlay(model: model))
+            hosting.view.backgroundColor = .clear
+            vc.customOverlayViewController = hosting
+            context.coordinator.hosting = hosting
+        }
+
         // 转场动画（约 0.4s）完成后通知 SwiftUI 侧做方向兜底，
         // 比 SwiftUI onAppear 更可靠（此时控制器已真实呈现在窗口上）。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -62,9 +110,18 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         if uiViewController.player !== player {
             uiViewController.player = player
         }
-        if uiViewController.showsPlaybackControls != showsControls {
-            uiViewController.showsPlaybackControls = showsControls
-        }
+        let model = context.coordinator.model
+        model.player = player
+        model.isPlaying = isPlaying
+        model.currentRate = currentRate
+        model.onPlayPause = onPlayPause
+        model.onRotate = onRotate
+        model.onClose = onClose
+        model.onSeekBy = onSeekBy
+        model.onBrightness = onBrightness
+        model.onVolume = onVolume
+        model.onLongPressBegan = onLongPressBegan
+        model.onLongPressEnded = onLongPressEnded
         context.coordinator.onViewAppeared = onViewAppeared
     }
 }
@@ -82,6 +139,8 @@ struct FullScreenGestureLayer: View {
     /// 水平滑动快进/快退偏移（秒），直播无 seek 时传 nil。
     var onSeek: ((Double) -> Void)? = nil
     let onTap: () -> Void
+    /// 双击回调（播放/暂停），nil 时不启用双击。
+    var onDoubleTap: (() -> Void)? = nil
     let onLongPressBegan: () -> Void
     let onLongPressEnded: () -> Void
     let onDragEnded: () -> Void
@@ -90,6 +149,9 @@ struct FullScreenGestureLayer: View {
     @State private var dragStartX: CGFloat = 0
     @State private var isSpeedActive = false
     @State private var longPressTimer: Timer?
+    /// 单击延迟判定（区分双击）：第一次短按等 0.25s，期间再来一次即双击。
+    @State private var isPendingTap = false
+    @State private var pendingTapTimer: Timer?
 
     var body: some View {
         GeometryReader { geometry in
@@ -139,8 +201,27 @@ struct FullScreenGestureLayer: View {
                                 let elapsed = Date().timeIntervalSince(start)
                                 let moved = max(abs(value.translation.width), abs(value.translation.height))
                                 if elapsed < 0.6 && moved < 12 {
-                                    // 短按：唤出按钮。
-                                    onTap()
+                                    // 短按：延迟 0.25s 判定双击/单击（腾讯逻辑：双击暂停，单击唤出）。
+                                    if isPendingTap {
+                                        isPendingTap = false
+                                        pendingTapTimer?.invalidate()
+                                        pendingTapTimer = nil
+                                        if let onDoubleTap {
+                                            onDoubleTap()
+                                        } else {
+                                            onTap()
+                                        }
+                                    } else {
+                                        isPendingTap = true
+                                        pendingTapTimer?.invalidate()
+                                        pendingTapTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: false) { _ in
+                                            Task { @MainActor in
+                                                isPendingTap = false
+                                                pendingTapTimer = nil
+                                                onTap()
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             pressStartTime = nil
@@ -202,6 +283,334 @@ final class SystemVolumeController {
         lastSetTime = now
         attachIfNeeded()
         slider?.value = min(max(value, 0), 1)
+    }
+}
+
+// MARK: - 腾讯风格全屏播放器控制条（集成在播放器内核内部）
+
+/// 内嵌到 AVPlayerViewController 的腾讯风格控制条：
+/// - 单击唤出/隐藏控制栏，双击播放/暂停
+/// - 左右滑动快进/快退，左侧上下滑亮度，右侧上下滑音量
+/// - 长按画面 2 倍速，松手恢复
+/// - 底部控制栏：进度条 + 时间 + 倍速 + 快退/播放/快进 + 旋转 + 退出
+struct TencentStylePlayerOverlay: View {
+    @ObservedObject var model: PlayerOverlayModel
+
+    @State private var controlsVisible = true
+    @State private var hideControlsTask: Task<Void, Never>?
+    @State private var currentTime: Double = 0
+    @State private var duration: Double = 0
+    @State private var isDraggingProgress = false
+    @State private var draggingSeconds: Double = 0
+    @State private var rate: Float = 1.0
+    @State private var osdText: String?
+    @State private var osdOpacity: Double = 0
+    @State private var osdTimer: Timer?
+    @State private var progressTimer: Timer?
+    @State private var brightnessGestureStart: CGFloat?
+    @State private var volumeGestureStart: Float?
+    @State private var seekStartTime: Double?
+
+    private static let playbackRates: [Float] = [1.0, 1.25, 1.5, 2.0]
+
+    var body: some View {
+        ZStack {
+            Color.clear
+
+            // 控制栏隐藏时的手势层（腾讯逻辑：控制栏显示期不响应全屏手势）。
+            if !controlsVisible {
+                FullScreenGestureLayer(
+                    onBrightness: { translation in
+                        if brightnessGestureStart == nil {
+                            brightnessGestureStart = UIScreen.main.brightness
+                        }
+                        let delta = -translation.height / 800.0
+                        let target = min(max((brightnessGestureStart ?? 0.5) + delta, 0), 1)
+                        UIScreen.main.brightness = target
+                        showOSD("亮度 \(Int(target * 100))%")
+                    },
+                    onVolume: { translation in
+                        if volumeGestureStart == nil {
+                            volumeGestureStart = SystemVolumeController.shared.currentVolume()
+                        }
+                        let delta = -translation.height / 800.0
+                        let target = min(max((volumeGestureStart ?? 0.5) + Float(delta), 0), 1)
+                        SystemVolumeController.shared.setVolume(target)
+                        showOSD("音量 \(Int(target * 100))%")
+                    },
+                    onSeek: { offset in
+                        seekBy(offset)
+                    },
+                    onTap: { showControls() },
+                    onDoubleTap: { model.onPlayPause?() },
+                    onLongPressBegan: { model.onLongPressBegan?() },
+                    onLongPressEnded: { model.onLongPressEnded?() },
+                    onDragEnded: {
+                        brightnessGestureStart = nil
+                        volumeGestureStart = nil
+                        seekStartTime = nil
+                        model.onLongPressEnded?()
+                    }
+                )
+            }
+
+            // OSD（快进/后退时间、亮度、音量、倍速提示）
+            if let osdText {
+                Text(osdText)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .opacity(osdOpacity)
+                    .allowsHitTesting(false)
+            }
+
+            // 底部控制栏（腾讯风格）
+            VStack {
+                Spacer()
+                controlsBar
+                    .opacity(controlsVisible ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.25), value: controlsVisible)
+                    .padding(.bottom, 8)
+                    .padding(.horizontal, 16)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(controlsVisible)
+        }
+        .onAppear {
+            rate = model.currentRate
+            showControls()
+            startProgressTimer()
+        }
+        .onDisappear {
+            hideControlsTask?.cancel()
+            progressTimer?.invalidate()
+            osdTimer?.invalidate()
+        }
+    }
+
+    // MARK: - 底部控制栏
+
+    private var controlsBar: some View {
+        VStack(spacing: 6) {
+            // 进度条行
+            HStack(spacing: 10) {
+                Text(currentTime.durationString)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(minWidth: 34, alignment: .leading)
+
+                Slider(
+                    value: Binding(
+                        get: { isDraggingProgress ? draggingSeconds : currentTime },
+                        set: { draggingSeconds = $0 }
+                    ),
+                    in: 0...max(duration, max(currentTime, 1)),
+                    onEditingChanged: { editing in
+                        isDraggingProgress = editing
+                        showControls()
+                        if !editing {
+                            seek(to: draggingSeconds)
+                        }
+                    }
+                )
+                .accentColor(.white)
+                .disabled(duration <= 0)
+
+                Text(duration.durationString)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.55))
+                    .frame(minWidth: 34, alignment: .trailing)
+            }
+
+            // 按钮行：倍速 | 后退10s | 播放/暂停 | 前进10s | 旋转 | 退出
+            HStack(spacing: 24) {
+                Button {
+                    showControls()
+                    cyclePlaybackRate()
+                } label: {
+                    Text(String(format: "%.1fx", rate))
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button {
+                    showControls()
+                    seekBy(-10)
+                    showOSD("后退 \(10)s")
+                } label: {
+                    Image(systemName: "gobackward.10")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    showControls()
+                    model.onPlayPause?()
+                } label: {
+                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    showControls()
+                    seekBy(10)
+                    showOSD("快进 \(10)s")
+                } label: {
+                    Image(systemName: "goforward.10")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button {
+                    showControls()
+                    model.onRotate?()
+                } label: {
+                    Image(systemName: "rectangle.landscape.rotate")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white.opacity(0.9))
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    model.onClose?()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 19))
+                        .foregroundColor(.white.opacity(0.9))
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .background(
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.7)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .environment(\.colorScheme, .dark)
+    }
+
+    // MARK: - 控制与状态
+
+    private func startProgressTimer() {
+        progressTimer?.invalidate()
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            Task { @MainActor in
+                guard let player = model.player else { return }
+                let cur = player.currentTime().seconds
+                if cur.isFinite, cur >= 0 {
+                    currentTime = cur
+                    if !isDraggingProgress {
+                        draggingSeconds = cur
+                    }
+                }
+                if let d = player.currentItem?.duration.seconds, d.isFinite, d >= 0 {
+                    duration = d
+                }
+            }
+        }
+    }
+
+    private func seek(to seconds: Double) {
+        guard let player = model.player else { return }
+        let wasPlaying = player.rate != 0
+        player.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600)) { _ in
+            if wasPlaying {
+                player.playImmediately(atRate: player.defaultRate)
+            }
+        }
+    }
+
+    private func seekBy(_ offset: Double) {
+        guard let player = model.player else { return }
+        if seekStartTime == nil {
+            seekStartTime = player.currentTime().seconds
+        }
+        let wasPlaying = player.rate != 0
+        var target = (seekStartTime ?? 0) + offset
+        if let d = player.currentItem?.duration.seconds, d.isFinite, d > 0 {
+            target = min(max(target, 0), d)
+        }
+        player.seek(to: CMTime(seconds: max(target, 0), preferredTimescale: 600)) { _ in
+            if wasPlaying {
+                player.playImmediately(atRate: player.defaultRate)
+            }
+        }
+        showOSD(formatTime(target))
+    }
+
+    private func cyclePlaybackRate() {
+        guard let player = model.player else { return }
+        let next = Self.playbackRates.first(where: { $0 > rate + 0.01 }) ?? Self.playbackRates[0]
+        rate = next
+        player.defaultRate = next
+        if player.rate > 0 {
+            player.rate = next
+        }
+        showOSD("倍速 \(String(format: "%.2g", next))x")
+    }
+
+    private func showControls() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            controlsVisible = true
+        }
+        hideControlsTask?.cancel()
+        let task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.4)) {
+                controlsVisible = false
+            }
+        }
+        hideControlsTask = task
+    }
+
+    private func showOSD(_ text: String) {
+        osdText = text
+        withAnimation(.easeInOut(duration: 0.15)) {
+            osdOpacity = 1
+        }
+        osdTimer?.invalidate()
+        osdTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
+            withAnimation(.easeOut(duration: 0.4)) {
+                osdOpacity = 0
+            }
+        }
+    }
+
+    private func formatTime(_ seconds: Double) -> String {
+        let total = Int(max(0, seconds))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
+        return String(format: "%02d:%02d", m, s)
     }
 }
 #endif
