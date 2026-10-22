@@ -428,8 +428,8 @@ final class ImageCache {
     private let cache = NSCache<NSURL, PlatformImage>()
     
     private init() {
-        cache.countLimit = 120
-        cache.totalCostLimit = 40 * 1024 * 1024
+        cache.countLimit = 300
+        cache.totalCostLimit = 100 * 1024 * 1024
     }
     
     func get(for url: URL) -> PlatformImage? {

@@ -26,6 +26,8 @@ class ApiConfig: ObservableObject {
     @Published var configUrl: String = ""
     @Published var liveConfigUrl: String = ""
     @Published var wallpaper: String = ""
+    /// 失效站点屏蔽集合（检测失败自动加入，持久化）。
+    @Published var blockedSourceKeys: Set<String> = []
     
     private let network = NetworkManager.shared
     private var activeLoadToken = UUID()
@@ -35,8 +37,84 @@ class ApiConfig: ObservableObject {
         let fetchedAt: Date
     }
     private var rawConfigCache: [String: RawConfigCacheEntry] = [:]
+    /// 失效站点屏蔽集合持久化键。
+    private static let blockedSourceKeysKey = "blockedSourceKeys"
     
-    private init() {}
+    private init() {
+        blockedSourceKeys = Set(UserDefaults.standard.stringArray(forKey: Self.blockedSourceKeysKey) ?? [])
+    }
+    
+    // MARK: - 失效源屏蔽
+    
+    /// 站点是否被屏蔽（检测失败自动屏蔽）。
+    func isSourceBlocked(_ key: String) -> Bool {
+        blockedSourceKeys.contains(key)
+    }
+    
+    /// 屏蔽失效站点（持久化）。
+    func blockSource(key: String) {
+        guard blockedSourceKeys.insert(key).inserted else { return }
+        UserDefaults.standard.set(Array(blockedSourceKeys), forKey: Self.blockedSourceKeysKey)
+    }
+    
+    /// 解除站点屏蔽（检测通过自动解除）。
+    func unblockSource(key: String) {
+        guard blockedSourceKeys.remove(key) != nil else { return }
+        UserDefaults.standard.set(Array(blockedSourceKeys), forKey: Self.blockedSourceKeysKey)
+    }
+    
+    /// 清空全部屏蔽（用于手动重置）。
+    func clearBlockedSources() {
+        blockedSourceKeys.removeAll()
+        UserDefaults.standard.removeObject(forKey: Self.blockedSourceKeysKey)
+    }
+    
+    /// 检测全部源站点连通性：失败自动屏蔽、成功解除屏蔽。
+    /// progress 回调参数：(已完成数, 总数, 源, 是否可用)。
+    func checkAllSources(progress: @escaping (Int, Int, SourceBean, Bool) -> Void) async {
+        let sources = sourceBeanList.filter { $0.isHttpApi }
+        let total = sources.count
+        // 并发探测仅在 nonisolated 上下文中收集结果，避免 actor 隔离冲突。
+        var results: [(source: SourceBean, ok: Bool)] = []
+        await withTaskGroup(of: (SourceBean, Bool).self) { group in
+            for source in sources {
+                group.addTask {
+                    let ok = await Self.ping(api: source.api)
+                    return (source, ok)
+                }
+            }
+            for await item in group {
+                results.append(item)
+            }
+        }
+        // 回 MainActor 统一更新屏蔽状态并回调进度。
+        for (index, item) in results.enumerated() {
+            if item.ok {
+                unblockSource(key: item.source.key)
+            } else {
+                blockSource(key: item.source.key)
+            }
+            progress(index + 1, total, item.source, item.ok)
+        }
+    }
+    
+    /// 轻量连通性探测：GET 接口地址，2.5s 超时，收到响应头即视为可用。
+    private nonisolated static func ping(api: String) async -> Bool {
+        guard let url = URL(string: api) else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 2.5
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        do {
+            let (_, response) = try await URLSession.shared.bytes(for: request)
+            if let http = response as? HTTPURLResponse {
+                return (200..<400).contains(http.statusCode)
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
     
     /// 加载远程配置
     func loadConfig(from apiUrl: String) async throws {
@@ -1026,9 +1104,9 @@ class ApiConfig: ObservableObject {
         sourceBeanList.first(where: { $0.key == key })
     }
     
-    /// 获取可搜索的源列表
+    /// 获取可搜索的源列表（自动过滤失效屏蔽站点）
     func getSearchableSources() -> [SourceBean] {
-        sourceBeanList.filter { $0.isSearchable }
+        sourceBeanList.filter { $0.isSearchable && !blockedSourceKeys.contains($0.key) }
     }
     
     /// 设置主页源

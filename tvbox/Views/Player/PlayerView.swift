@@ -286,6 +286,8 @@ struct TencentStylePlayerOverlay: View {
     @State private var brightnessGestureStart: CGFloat?
     @State private var volumeGestureStart: Float?
     @State private var seekStartTime: Double?
+    /// 锁屏状态：开启后禁用滑动/双击/长按等全部手势控制。
+    @State private var isLocked = false
 
     private static let playbackRates: [Float] = [1.0, 1.25, 1.5, 2.0]
 
@@ -297,6 +299,7 @@ struct TencentStylePlayerOverlay: View {
             // 控制栏显示期由上层 topBar/controlsBar 拦截按钮点击；隐藏期手势层全屏响应。
             FullScreenGestureLayer(
                 onBrightness: { translation in
+                    guard !isLocked else { return }
                     if brightnessGestureStart == nil {
                         brightnessGestureStart = UIScreen.main.brightness
                     }
@@ -306,6 +309,7 @@ struct TencentStylePlayerOverlay: View {
                     showOSD("亮度 \(Int(target * 100))%")
                 },
                 onVolume: { translation in
+                    guard !isLocked else { return }
                     if volumeGestureStart == nil {
                         volumeGestureStart = SystemVolumeController.shared.currentVolume()
                     }
@@ -315,21 +319,35 @@ struct TencentStylePlayerOverlay: View {
                     showOSD("音量 \(Int(target * 100))%")
                 },
                 onSeek: { offset in
-                    // 直播无进度概念：左右滑动不调节进度。
-                    guard !isLive else { return }
+                    // 直播无进度概念：左右滑动不调节进度；锁定时手势禁用。
+                    guard !isLive, !isLocked else { return }
                     seekBy(offset)
                 },
                 onTap: {
-                    // 播放失败等 keepControlsVisible 场景：点击空白切换隐藏/显示。
+                    // 锁定时单击仅唤出控制栏（点锁按钮解锁）。
+                    if isLocked {
+                        showControls()
+                        return
+                    }
                     if controlsVisible {
                         hideControlsNow()
                     } else {
                         showControls()
                     }
                 },
-                onDoubleTap: { onPlayPause?() },
-                onLongPressBegan: { onLongPressBegan?() },
-                onLongPressEnded: { onLongPressEnded?() },
+                onDoubleTap: {
+                    // 锁定时双击不响应。
+                    guard !isLocked else { return }
+                    onPlayPause?()
+                },
+                onLongPressBegan: {
+                    guard !isLocked else { return }
+                    onLongPressBegan?()
+                },
+                onLongPressEnded: {
+                    guard !isLocked else { return }
+                    onLongPressEnded?()
+                },
                 onDragEnded: {
                     brightnessGestureStart = nil
                     volumeGestureStart = nil
@@ -383,8 +401,6 @@ struct TencentStylePlayerOverlay: View {
                     )
                 )
                 Spacer()
-                    .contentShape(Rectangle())
-                    .onTapGesture { hideControlsNow() }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .opacity(controlsVisible ? 1 : 0)
@@ -394,8 +410,6 @@ struct TencentStylePlayerOverlay: View {
             // 底部控制栏（腾讯视频同款）
             VStack {
                 Spacer()
-                    .contentShape(Rectangle())
-                    .onTapGesture { hideControlsNow() }
                 controlsBar
                     .opacity(controlsVisible ? 1 : 0)
                     .animation(.easeInOut(duration: 0.25), value: controlsVisible)
@@ -663,6 +677,22 @@ struct TencentStylePlayerOverlay: View {
                             Image(systemName: "rectangle.landscape.rotate")
                                 .font(.system(size: 17, weight: .medium))
                                 .foregroundColor(.white)
+                                .frame(width: 34, height: 34)
+                        }
+                        .buttonStyle(.plain)
+
+                        // 锁屏按钮：开启后禁用全部手势控制，单击画面仅唤出控制栏解锁。
+                        Button {
+                            isLocked.toggle()
+                            if isLocked {
+                                hideControlsNow()
+                            } else {
+                                showControls()
+                            }
+                        } label: {
+                            Image(systemName: isLocked ? "lock.fill" : "lock.open")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(isLocked ? Color.orange : .white)
                                 .frame(width: 34, height: 34)
                         }
                         .buttonStyle(.plain)

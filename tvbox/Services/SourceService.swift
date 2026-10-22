@@ -424,13 +424,13 @@ class SourceService {
         return filterSearchResults(videos, keyword: keyword)
     }
     
-    /// 多源并发搜索
-    func searchAll(keyword: String) async -> [Movie.Video] {
+    /// 多源并发搜索（流式）：每个源完成即回调该源结果，界面边搜边显示。
+    func searchAllStreaming(keyword: String, onBatch: @escaping ([Movie.Video]) -> Void) async {
         let sources = await ApiConfig.shared.getSearchableSources()
         
-        return await withTaskGroup(of: [Movie.Video].self) { group in
+        await withTaskGroup(of: [Movie.Video].self) { group in
             for source in sources {
-                // 跳过不支持的源类型
+                // 跳过不支持的源类型与失效屏蔽源
                 guard source.isSupportedInSwift && source.isHttpApi else { continue }
                 
                 group.addTask { [self] in
@@ -445,12 +445,22 @@ class SourceService {
                 }
             }
             
-            var allResults: [Movie.Video] = []
+            // 每完成一个源立即回调，实现"搜出来就显示"。
             for await results in group {
-                allResults.append(contentsOf: results)
+                if !results.isEmpty {
+                    onBatch(results)
+                }
             }
-            return allResults
         }
+    }
+    
+    /// 多源并发搜索（聚合结果，全部完成后一次性返回）
+    func searchAll(keyword: String) async -> [Movie.Video] {
+        var aggregated: [Movie.Video] = []
+        await searchAllStreaming(keyword: keyword) { batch in
+            aggregated.append(contentsOf: batch)
+        }
+        return aggregated
     }
     
     /// 带超时的异步操作包装：超过限时抛出错误，立即返回。

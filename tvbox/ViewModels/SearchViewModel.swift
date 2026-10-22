@@ -25,7 +25,7 @@ class SearchViewModel: ObservableObject {
         loadSearchHistory()
     }
     
-    /// 执行搜索
+    /// 执行搜索（流式：每个源完成立即追加显示，不等全部源搜完）。
     func search() async {
         let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -39,16 +39,32 @@ class SearchViewModel: ObservableObject {
         // 搜索一旦触发就先落历史，保持行为与移动端常见搜索体验一致。
         addToHistory(trimmed)
         
-        // 走多源并发搜索，返回聚合后的影片列表。
-        let videos = await sourceService.searchAll(keyword: trimmed)
+        // 走多源流式并发搜索：每完成一个源立即显示该源结果。
+        await sourceService.searchAllStreaming(keyword: trimmed) { [weak self] batch in
+            Task { @MainActor in
+                guard let self, requestId == self.latestSearchRequestId else { return }
+                self.appendUnique(batch)
+            }
+        }
         guard requestId == latestSearchRequestId else { return }
-        self.results = videos
         
-        if videos.isEmpty {
+        if results.isEmpty {
             errorMessage = "未找到相关内容"
         }
         
         isSearching = false
+    }
+    
+    /// 追加结果并去重：同一影片（名称+年份）只保留一次，避免多源重复条目与重复封面请求。
+    private func appendUnique(_ videos: [Movie.Video]) {
+        var seen = Set<String>()
+        seen.formUnion(results.map { "\($0.name)|\($0.year)" })
+        for video in videos {
+            let key = "\(video.name)|\(video.year)"
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            results.append(video)
+        }
     }
     
     /// 在指定源搜索

@@ -30,6 +30,10 @@ struct SettingsView: View {
     @State private var showAbout = false
     @State private var sourceSearchText = ""
     @State private var showingPicker: PickerType = .none
+    /// 源站点检测状态。
+    @State private var isCheckingSources = false
+    @State private var checkedCount = 0
+    @State private var totalCount = 0
     /// 遥控服务状态。
     @StateObject private var remoteControl = RemoteControlService.shared
     /// 备份导出文件（ShareLink 用）。
@@ -46,6 +50,33 @@ struct SettingsView: View {
         case playTimeStep
         case historyLimit
         case playScale
+    }
+    
+    /// 源检测状态文案。
+    private var detectionStatusText: String {
+        if isCheckingSources {
+            return "检测中 \(checkedCount)/\(totalCount)"
+        }
+        let blocked = apiConfig.blockedSourceKeys.count
+        if blocked > 0 {
+            return "已屏蔽 \(blocked) 个失效站点"
+        }
+        return "全部站点正常"
+    }
+    
+    /// 开始检测全部源站点：失败自动屏蔽、成功解除。
+    private func startSiteCheck() {
+        guard !isCheckingSources else { return }
+        isCheckingSources = true
+        checkedCount = 0
+        totalCount = apiConfig.sourceBeanList.filter { $0.isHttpApi }.count
+        Task {
+            await apiConfig.checkAllSources { done, total, _, ok in
+                checkedCount = done
+                totalCount = total
+            }
+            isCheckingSources = false
+        }
     }
     
     var body: some View {
@@ -77,6 +108,22 @@ struct SettingsView: View {
                                 sourcePickerView
                             } label: {
                                 SettingsRow(icon: "server.rack", title: "主页数据源", value: apiConfig.homeSourceBean?.name ?? "", action: nil)
+                            }
+                            Divider().background(Color.white.opacity(0.1))
+                            // 源站点检测：失效站点自动屏蔽，搜索/列表自动跳过。
+                            SettingsRow(
+                                icon: "antenna.radiowaves.left.and.right",
+                                title: "检测源站点",
+                                value: detectionStatusText,
+                                action: startSiteCheck
+                            )
+                            .disabled(isCheckingSources)
+                            if isCheckingSources {
+                                ProgressView(value: Float(checkedCount), total: Float(max(totalCount, 1)))
+                                    .progressViewStyle(.linear)
+                                    .tint(.orange)
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 10)
                             }
                         }
                     }
