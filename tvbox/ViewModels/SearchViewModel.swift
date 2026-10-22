@@ -43,7 +43,8 @@ class SearchViewModel: ObservableObject {
         await sourceService.searchAllStreaming(keyword: trimmed) { [weak self] batch in
             Task { @MainActor in
                 guard let self, requestId == self.latestSearchRequestId else { return }
-                self.appendUnique(batch)
+                // 直接追加，保留各源全部结果（与安卓版一致）；封面重复请求由磁盘缓存消除。
+                self.results.append(contentsOf: batch)
             }
         }
         guard requestId == latestSearchRequestId else { return }
@@ -53,18 +54,6 @@ class SearchViewModel: ObservableObject {
         }
         
         isSearching = false
-    }
-    
-    /// 追加结果并去重：同一影片（名称+年份）只保留一次，避免多源重复条目与重复封面请求。
-    private func appendUnique(_ videos: [Movie.Video]) {
-        var seen = Set<String>()
-        seen.formUnion(results.map { "\($0.name)|\($0.year)" })
-        for video in videos {
-            let key = "\(video.name)|\(video.year)"
-            guard !seen.contains(key) else { continue }
-            seen.insert(key)
-            results.append(video)
-        }
     }
     
     /// 在指定源搜索

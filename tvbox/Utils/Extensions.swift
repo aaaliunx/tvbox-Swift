@@ -335,6 +335,14 @@ final class ImageLoader {
             request.setValue("https://\(host)/", forHTTPHeaderField: "Referer")
         }
         
+        // 手动磁盘缓存优先：无论服务器是否带缓存头，同一 URL 命中后不再发网络请求。
+        if let cachedData = cachedData(for: url) {
+            let maxPixelSize = thumbnailMaxPixelSize
+            if let image = Self.decodeImage(data: cachedData, maxPixelSize: maxPixelSize) {
+                return image
+            }
+        }
+        
         var lastError: Error = ImageLoadError.invalidData
         let totalAttempts = Self.maxImageRetries + 1
         
@@ -356,6 +364,9 @@ final class ImageLoader {
                     throw error
                 }
                 
+                // 请求成功即写入手动磁盘缓存（覆盖 URLCache 仅缓存带缓存头响应的限制）。
+                storeCachedData(data, response: response, for: url)
+                
                 let maxPixelSize = thumbnailMaxPixelSize
                 guard let image = Self.decodeImage(data: data, maxPixelSize: maxPixelSize) else {
                     throw ImageLoadError.invalidData
@@ -375,6 +386,18 @@ final class ImageLoader {
         }
         
         throw lastError
+    }
+    
+    /// 读取手动磁盘缓存。
+    private func cachedData(for url: URL) -> Data? {
+        let request = URLRequest(url: url)
+        return urlCache.cachedResponse(for: request)?.data
+    }
+    
+    /// 写入手动磁盘缓存。
+    private func storeCachedData(_ data: Data, response: URLResponse, for url: URL) {
+        let request = URLRequest(url: url)
+        urlCache.storeCachedResponse(CachedURLResponse(response: response, data: data), for: request)
     }
     
     private static func isRetryableImageError(_ error: Error, statusCode: Int) -> Bool {

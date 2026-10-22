@@ -1189,9 +1189,10 @@ struct LiveFullScreenPlayerView: View {
                     endLiveLongPressSpeed()
                 },
                 onDragEnded: {
+                    // 仅清空滑动快照；倍速恢复由手势层在长按激活时自行处理，
+                    // 避免双击暂停松手后被恢复播放。
                     brightnessGestureStart = nil
                     volumeGestureStart = nil
-                    endLiveLongPressSpeed()
                 }
             )
 

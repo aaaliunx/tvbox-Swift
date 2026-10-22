@@ -288,6 +288,8 @@ struct TencentStylePlayerOverlay: View {
     @State private var seekStartTime: Double?
     /// 锁屏状态：开启后禁用滑动/双击/长按等全部手势控制。
     @State private var isLocked = false
+    /// 锁定态单击唤出的"仅锁按钮"浮层（腾讯逻辑：锁定时不显示完整控制栏）。
+    @State private var showLockHint = false
 
     private static let playbackRates: [Float] = [1.0, 1.25, 1.5, 2.0]
 
@@ -324,9 +326,11 @@ struct TencentStylePlayerOverlay: View {
                     seekBy(offset)
                 },
                 onTap: {
-                    // 锁定时单击仅唤出控制栏（点锁按钮解锁）。
+                    // 锁定时单击仅显示"锁按钮"浮层，不显示完整控制栏。
                     if isLocked {
-                        showControls()
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showLockHint = true
+                        }
                         return
                     }
                     if controlsVisible {
@@ -352,7 +356,9 @@ struct TencentStylePlayerOverlay: View {
                     brightnessGestureStart = nil
                     volumeGestureStart = nil
                     seekStartTime = nil
-                    onLongPressEnded?()
+                    // 注意：不再在此调用 onLongPressEnded——手势层仅在长按确实激活
+                    // （isSpeedActive）时于 onEnded 中恢复倍速，避免双击暂停等操作
+                    // 松手时把 rate 恢复成播放导致"暂停不生效"。
                 }
             )
 
@@ -416,6 +422,38 @@ struct TencentStylePlayerOverlay: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(controlsVisible)
+
+            // 锁定态浮层：仅显示解锁按钮（腾讯逻辑——锁定时不显示完整控制栏）
+            if isLocked && showLockHint {
+                ZStack {
+                    Color.black.opacity(0.001).ignoresSafeArea()
+                        .onTapGesture { showLockHint = false }
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Button {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    isLocked = false
+                                    showLockHint = false
+                                    showControls()
+                                }
+                            } label: {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .frame(width: 46, height: 46)
+                                    .background(Color.black.opacity(0.6))
+                                    .clipShape(Circle())
+                            }
+                            .padding(.trailing, 28)
+                            .padding(.bottom, 32)
+                        }
+                        Spacer()
+                    }
+                }
+                .transition(.opacity)
+            }
         }
         .onAppear {
             showControls()
@@ -681,9 +719,10 @@ struct TencentStylePlayerOverlay: View {
                         }
                         .buttonStyle(.plain)
 
-                        // 锁屏按钮：开启后禁用全部手势控制，单击画面仅唤出控制栏解锁。
+                        // 锁屏按钮：开启后禁用全部手势控制，单击画面仅显示解锁按钮。
                         Button {
                             isLocked.toggle()
+                            showLockHint = false
                             if isLocked {
                                 hideControlsNow()
                             } else {

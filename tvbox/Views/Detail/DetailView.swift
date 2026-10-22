@@ -897,10 +897,7 @@ struct FullScreenPlayerView: View {
                         endLongPressSpeed(player: systemController?.player)
                     },
                     onDragEnded: {
-                        brightnessGestureStart = nil
-                        volumeGestureStart = nil
-                        seekStartTime = nil
-                        endLongPressSpeed(player: systemController?.player)
+                        clearGestureState()
                     }
                 )
             }
@@ -1028,6 +1025,14 @@ struct FullScreenPlayerView: View {
             isFullScreenPlaying = false
             showOSD("暂停")
         }
+    }
+    
+    /// 手势结束清理：仅清空滑动快照。倍速恢复由手势层在长按激活时自行调用，
+    /// 不再在这里触发 endLongPressSpeed，防止双击暂停后松手又被恢复播放。
+    private func clearGestureState() {
+        brightnessGestureStart = nil
+        volumeGestureStart = nil
+        seekStartTime = nil
     }
 
     private func seekInFullScreen(by offset: Double) {
