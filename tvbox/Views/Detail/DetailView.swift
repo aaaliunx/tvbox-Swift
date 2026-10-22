@@ -709,74 +709,40 @@ struct FullScreenPlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            #if os(iOS)
-            if selectedEngine == .system {
-                // 系统引擎：官方 AVPlayerViewController（控制条横屏底部、手势齐全）。
-                if let player = systemController?.player {
-                    AVPlayerViewControllerRepresentable(player: player)
-                        .ignoresSafeArea()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            } else {
-            #else
-            if true {
-            #endif
-                // VLC 引擎（macOS 也走此路径）：复用页面播放器实例。
-                VStack(spacing: 0) {
-                    PlayerView(
-                        urlString: urlString,
-                        startPosition: startPosition,
-                        onProgressChanged: onProgressChanged,
-                        onPlaybackEnded: onPlaybackEnded,
-                        onToggleFullScreen: {
+            fullScreenPlayerBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .topTrailing) {
+                    HStack(spacing: 16) {
+                        #if os(iOS)
+                        // 左右翻转横屏（系统方向请求 + 设备方向兜底）
+                        Button {
+                            isLandscapeLeft.toggle()
+                            if isLandscapeLeft {
+                                DeviceOrientation.forceLandscapeLeft()
+                            } else {
+                                DeviceOrientation.forceLandscapeRight()
+                            }
+                        } label: {
+                            Image(systemName: "rectangle.landscape.rotate")
+                                .font(.title3)
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                        #endif
+                        // 退出全屏
+                        Button {
                             if let onCloseRequested {
                                 onCloseRequested()
                             } else {
                                 dismiss()
                             }
-                        },
-                        canPlayNext: canPlayNext,
-                        onPlayNext: onPlayNext,
-                        systemController: systemController,
-                        vlcController: vlcController
-                    )
-                    .ignoresSafeArea()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .overlay(alignment: .topTrailing) {
-                HStack(spacing: 16) {
-                    #if os(iOS)
-                    // 左右翻转横屏（系统方向请求 + 设备方向兜底）
-                    Button {
-                        isLandscapeLeft.toggle()
-                        if isLandscapeLeft {
-                            DeviceOrientation.forceLandscapeLeft()
-                        } else {
-                            DeviceOrientation.forceLandscapeRight()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(.white.opacity(0.8))
                         }
-                    } label: {
-                        Image(systemName: "rectangle.landscape.rotate")
-                            .font(.title3)
-                            .foregroundColor(.white.opacity(0.8))
                     }
-                    #endif
-                    // 退出全屏
-                    Button {
-                        if let onCloseRequested {
-                            onCloseRequested()
-                        } else {
-                            dismiss()
-                        }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.white.opacity(0.8))
-                    }
+                    .padding()
                 }
-                .padding()
-            }
         }
         .ignoresSafeArea()
         #if os(iOS)
@@ -792,5 +758,50 @@ struct FullScreenPlayerView: View {
             DeviceOrientation.forcePortrait()
         }
         #endif
+    }
+
+    /// 全屏播放器主体：iOS 系统引擎用官方 AVPlayerViewController，
+    /// VLC 引擎与 macOS 使用页面播放器实例（复用不重新加载）。
+    @ViewBuilder
+    private var fullScreenPlayerBody: some View {
+        #if os(iOS)
+        if selectedEngine == .system {
+            if let player = systemController?.player {
+                AVPlayerViewControllerRepresentable(player: player)
+                    .ignoresSafeArea()
+            } else {
+                Color.black
+            }
+        } else {
+            inlinePlayer
+        }
+        #else
+        inlinePlayer
+        #endif
+    }
+
+    private var inlinePlayer: some View {
+        VStack(spacing: 0) {
+            PlayerView(
+                urlString: urlString,
+                startPosition: startPosition,
+                onProgressChanged: onProgressChanged,
+                onPlaybackEnded: onPlaybackEnded,
+                onToggleFullScreen: {
+                    if let onCloseRequested {
+                        onCloseRequested()
+                    } else {
+                        dismiss()
+                    }
+                },
+                canPlayNext: canPlayNext,
+                onPlayNext: onPlayNext,
+                systemController: systemController,
+                vlcController: vlcController
+            )
+            .ignoresSafeArea()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
