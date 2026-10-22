@@ -259,6 +259,12 @@ struct TencentStylePlayerOverlay: View {
     var channelNames: [String] = []
     var selectedChannelIndex: Int = 0
     var onSelectChannel: ((Int) -> Void)? = nil
+    /// 频道分组名称列表；为空时不显示分组条。
+    var groupNames: [String] = []
+    var selectedGroupIndex: Int = 0
+    var onSelectGroup: ((Int) -> Void)? = nil
+    /// 是否为直播：隐藏倍速与 10s 快进/后退按钮，左右滑动不做进度调节。
+    var isLive: Bool = false
 
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -307,6 +313,8 @@ struct TencentStylePlayerOverlay: View {
                         showOSD("音量 \(Int(target * 100))%")
                     },
                     onSeek: { offset in
+                        // 直播无进度概念：左右滑动不调节进度。
+                        guard !isLive else { return }
                         seekBy(offset)
                     },
                     onTap: { showControls() },
@@ -481,17 +489,20 @@ struct TencentStylePlayerOverlay: View {
             // 按钮行：左播放控制固定 / 右功能按钮组（窄屏可横向滚动，防止竖屏溢出文字不显示）
             HStack(spacing: 16) {
                 HStack(spacing: 20) {
-                    Button {
-                        showControls()
-                        seekBy(-10)
-                        showOSD("后退 10s")
-                    } label: {
-                        Image(systemName: "gobackward.10")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
+                    // 直播无进度条：隐藏 10s 快进/后退按钮。
+                    if !isLive {
+                        Button {
+                            showControls()
+                            seekBy(-10)
+                            showOSD("后退 10s")
+                        } label: {
+                            Image(systemName: "gobackward.10")
+                                .font(.system(size: 20, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(width: 32, height: 32)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
 
                     Button {
                         showControls()
@@ -504,17 +515,19 @@ struct TencentStylePlayerOverlay: View {
                     }
                     .buttonStyle(.plain)
 
-                    Button {
-                        showControls()
-                        seekBy(10)
-                        showOSD("快进 10s")
-                    } label: {
-                        Image(systemName: "goforward.10")
-                            .font(.system(size: 20, weight: .medium))
-                            .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
+                    if !isLive {
+                        Button {
+                            showControls()
+                            seekBy(10)
+                            showOSD("快进 10s")
+                        } label: {
+                            Image(systemName: "goforward.10")
+                                .font(.system(size: 20, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(width: 32, height: 32)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
 
                 Spacer(minLength: 8)
@@ -587,25 +600,27 @@ struct TencentStylePlayerOverlay: View {
                             .buttonStyle(.plain)
                         }
 
-                        // 倍速按钮
-                        Button {
-                            showControls()
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                showRateMenu.toggle()
-                                showChannelPanel = false
-                                showEpisodePanel = false
-                                showSourcePanel = false
+                        // 倍速按钮（直播无加速概念，隐藏）
+                        if !isLive {
+                            Button {
+                                showControls()
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    showRateMenu.toggle()
+                                    showChannelPanel = false
+                                    showEpisodePanel = false
+                                    showSourcePanel = false
+                                }
+                            } label: {
+                                Text("倍速")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(showRateMenu ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
+                                    .clipShape(Capsule())
                             }
-                        } label: {
-                            Text("倍速")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(showRateMenu ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
-                                .clipShape(Capsule())
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
 
                         Button {
                             showControls()
@@ -653,6 +668,31 @@ struct TencentStylePlayerOverlay: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.white.opacity(0.9))
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+            // 分组横条：点击切换分组
+            if groupNames.count > 1 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(groupNames.indices, id: \.self) { gi in
+                            Button {
+                                onSelectGroup?(gi)
+                                showControls()
+                            } label: {
+                                Text(groupNames[gi])
+                                    .font(.system(size: 12, weight: gi == selectedGroupIndex ? .bold : .regular))
+                                    .foregroundColor(gi == selectedGroupIndex ? .black : .white)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(gi == selectedGroupIndex ? Color.white : Color.white.opacity(0.15))
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 4) {

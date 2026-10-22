@@ -128,6 +128,11 @@ struct LiveView: View {
                         let channels = viewModel.currentChannels
                         guard index >= 0, index < channels.count else { return }
                         viewModel.selectChannel(channels[index])
+                    },
+                    groupNames: viewModel.channelGroups.map { $0.groupName },
+                    selectedGroupIndex: viewModel.selectedGroupIndex,
+                    onSelectGroup: { index in
+                        viewModel.selectGroup(index)
                     }
                 )
             }
@@ -990,6 +995,10 @@ struct LiveFullScreenPlayerView: View {
     var channelNames: [String] = []
     var selectedChannelIndex: Int = 0
     var onSelectChannel: ((Int) -> Void)? = nil
+    /// 频道分组名称列表（用于控制栏"频道"面板分组切换）。
+    var groupNames: [String] = []
+    var selectedGroupIndex: Int = 0
+    var onSelectGroup: ((Int) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     /// 左右横屏方向标记（旋转按钮切换 landscapeLeft/Right）。
     @State private var isLandscapeLeft = false
@@ -1028,9 +1037,13 @@ struct LiveFullScreenPlayerView: View {
                             onSelectSource: { index in onSelectSource?(index) },
                             channelNames: channelNames,
                             selectedChannelIndex: selectedChannelIndex,
-                            onSelectChannel: { index in onSelectChannel?(index) }
+                            onSelectChannel: { index in onSelectChannel?(index) },
+                            groupNames: groupNames,
+                            selectedGroupIndex: selectedGroupIndex,
+                            onSelectGroup: { index in onSelectGroup?(index) },
+                            isLive: true
                         )
-                        .ignoresSafeArea()
+                        // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }

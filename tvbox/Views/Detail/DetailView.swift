@@ -786,7 +786,7 @@ struct FullScreenPlayerView: View {
                                 onSelectEpisode?(index)
                             }
                         )
-                        .ignoresSafeArea()
+                        // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
                         .onChange(of: urlString) { _, newURL in
                             // 切线路/切集后按新地址换流，不重建播放器。
                             reloadSystemPlayer(with: newURL)
