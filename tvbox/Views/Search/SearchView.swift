@@ -4,6 +4,8 @@ import SwiftUI
 struct SearchView: View {
     /// 搜索状态与结果管理。
     @StateObject private var viewModel = SearchViewModel()
+    /// 搜索框焦点（用于统一收起键盘）。
+    @FocusState private var searchFocused: Bool
     
     #if os(iOS)
     /// iOS 卡片网格参数。
@@ -71,7 +73,9 @@ struct SearchView: View {
                     .font(.system(size: 16))
                     .foregroundColor(.white)
                     .submitLabel(.search)
+                    .focused($searchFocused)
                     .onSubmit {
+                        searchFocused = false
                         Task { await viewModel.search() }
                     }
                     #if os(iOS)
@@ -80,6 +84,7 @@ struct SearchView: View {
                 
                 if !viewModel.keyword.isEmpty {
                     Button {
+                        searchFocused = false
                         withAnimation {
                             viewModel.keyword = ""
                             viewModel.results = []
@@ -101,6 +106,7 @@ struct SearchView: View {
             )
             
             Button {
+                searchFocused = false
                 Task { await viewModel.search() }
             } label: {
                 Text("搜索")
@@ -172,6 +178,8 @@ struct SearchView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
+        // 滚动列表时自动收起键盘（腾讯视频式交互）。
+        .scrollDismissesKeyboard(.interactively)
         .navigationDestination(for: Movie.Video.self) { video in
             DetailView(video: video)
         }
@@ -205,6 +213,7 @@ struct SearchView: View {
                 FlowLayout(spacing: 8) {
                     ForEach(viewModel.searchHistory, id: \.self) { keyword in
                         Button {
+                            searchFocused = false
                             viewModel.keyword = keyword
                             Task { await viewModel.search() }
                         } label: {
