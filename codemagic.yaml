@@ -1,4 +1,4 @@
-# Codemagic：无 Mac 环境下编译未签名 iOS IPA
+# Codemagic：无 Mac 环境下编译未签名 iOS IPA（诊断模式：失败也上传日志）
 workflows:
   ios-build:
     name: Build Unsigned IPA
@@ -13,29 +13,30 @@ workflows:
           xcodegen version || true
           xcodebuild -version
           xcodegen generate
-          xcodebuild -list -project tvbox.xcodeproj
-      - name: 编译 Archive（不签名，失败时输出诊断）
+          xcodebuild -list -project tvbox.xcodeproj 2>&1 | tail -20
+      - name: 编译 Archive（不签名，失败不中断，日志存文件）
         script: |
-          set -e
+          set +e
           xcodebuild archive \
             -project tvbox.xcodeproj \
             -scheme tvbox \
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath build/tvbox.xcarchive \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee build_archive.log
-          # 若 archive 失败，把错误摘录输出到日志
-          if ! tail -n 5 build_archive.log | grep -q "ARCHIVE SUCCEEDED"; then
-            echo "=== ARCHIVE FAILED, error excerpts ==="
-            grep -iE "error:|fatal:|failed|Unable|No such|not found" build_archive.log | head -40 || true
-            ls -la build_archive.log
-            exit 1
-          fi
-      - name: 打包未签名 IPA（标准 Payload 结构）
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO > build_archive.log 2>&1
+          echo "ARCHIVE_EXIT=$?"
+          echo "=== 错误摘录 ==="
+          grep -iE "error:|fatal:|failed|Unable|No such|not found|BUILD FAILED|ARCHIVE FAILED" build_archive.log | head -50
+          echo "=== 日志末尾 ==="
+          tail -n 30 build_archive.log
+      - name: 打包未签名 IPA（若编译成功）
         script: |
           set -e
+          if [ ! -d "build/tvbox.xcarchive/Products/Applications/TVBox.app" ]; then
+            echo "ARCHIVE FAILED - 本次仅上传编译日志供分析"
+            exit 0
+          fi
           APP_PATH="build/tvbox.xcarchive/Products/Applications/TVBox.app"
-          test -d "$APP_PATH" || { echo "未找到 TVBox.app"; exit 1; }
           rm -rf build/ipa
           mkdir -p build/ipa/Payload
           cp -R "$APP_PATH" build/ipa/Payload/
@@ -43,7 +44,6 @@ workflows:
           zip -q -r -y ../../TVBox-unsigned.ipa Payload/
           cd ../..
           ls -lh TVBox-unsigned.ipa
-          unzip -l TVBox-unsigned.ipa | head -5
     artifacts:
       - TVBox-unsigned.ipa
       - build_archive.log
