@@ -868,6 +868,8 @@ struct LiveFullScreenPlayerView: View {
                         .ignoresSafeArea()
                     }
                 }
+                // 关键：先铺满全屏再整体旋转，避免旋转后只有播放器固有尺寸。
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .rotationEffect(.degrees(landscapeRotation))
                 .frame(
                     width: landscapeRotation != 0 ? screenH : screenW,
@@ -898,6 +900,18 @@ struct LiveFullScreenPlayerView: View {
         }
         .ignoresSafeArea()
         .statusBarHidden(true)
+        // 自动旋转开启时跟随设备方向：横屏左/右切换内容旋转角；
+        // 锁定方向时设备方向不变化，由右上角翻转按钮手动控制。
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            switch UIDevice.current.orientation {
+            case .landscapeLeft:
+                landscapeRotation = -90
+            case .landscapeRight:
+                landscapeRotation = 90
+            default:
+                break
+            }
+        }
     }
 }
 #endif

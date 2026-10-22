@@ -722,6 +722,9 @@ struct FullScreenPlayerView: View {
                     )
                     .ignoresSafeArea()
                 }
+                // 关键：先铺满全屏（PlayerView 自带 16:9 固有尺寸，
+                // 不铺满则旋转后只有画面比例的尺寸），再整体旋转。
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .rotationEffect(.degrees(landscapeRotation))
                 .frame(
                     width: landscapeRotation != 0 ? screenH : screenW,
@@ -759,6 +762,18 @@ struct FullScreenPlayerView: View {
         .ignoresSafeArea()
         #if os(iOS)
         .statusBarHidden(true)
+        // 自动旋转开启时跟随设备方向：横屏左/右切换内容旋转角；
+        // 锁定方向时设备方向不变化，由右上角翻转按钮手动控制。
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            switch UIDevice.current.orientation {
+            case .landscapeLeft:
+                landscapeRotation = -90
+            case .landscapeRight:
+                landscapeRotation = 90
+            default:
+                break
+            }
+        }
         #endif
     }
 }

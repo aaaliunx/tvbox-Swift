@@ -1,5 +1,6 @@
 import Foundation
 import JavaScriptCore
+import zlib
 
 /// Spider（type=3）源执行服务。
 /// 通过 JavaScriptCore 在沙箱内执行用户配置的 JS 脚本源，
@@ -21,6 +22,133 @@ final class SpiderService {
         let cf = CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)
         return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cf))
     }()
+    
+    // MARK: - jar（zip）源支持
+    
+    /// 下载 jar 并解包提取第一个 .js 脚本内容。
+    private static func extractJSFromJar(at urlString: String) async throws -> String? {
+        guard let url = URL(string: urlString) else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        let (data, _) = try await URLSession.shared.data(for: request)
+        guard data.count > 22 else { return nil }
+        return extractFirstJS(from: data)
+    }
+    
+    /// 解析 zip 中央目录，返回第一个 .js 条目内容（支持 store/deflate）。
+    private static func extractFirstJS(from zipData: Data) -> String? {
+        guard zipData.count > 22 else { return nil }
+        // 定位 EOCD（0x06054b50），允许最大 64KB 尾部注释。
+        var eocd = -1
+        var idx = zipData.count - 22
+        let minStart = max(0, zipData.count - 22 - 65535)
+        while idx >= minStart {
+            if zipData[idx] == 0x50,
+               idx + 3 < zipData.count,
+               zipData[idx + 1] == 0x4b,
+               zipData[idx + 2] == 0x05,
+               zipData[idx + 3] == 0x06 {
+                eocd = idx
+                break
+            }
+            idx -= 1
+        }
+        guard eocd >= 0 else { return nil }
+        
+        let cdCount = Int(leU16(zipData, eocd + 10))
+        let cdOffset = Int(leU32(zipData, eocd + 16))
+        guard cdOffset >= 0, cdOffset < zipData.count else { return nil }
+        
+        var jsEntries: [(local: Int, method: Int, size: Int)] = []
+        var pos = cdOffset
+        for _ in 0..<min(cdCount, 65535) {
+            guard pos + 46 <= zipData.count else { break }
+            guard leU32(zipData, pos) == 0x02014b50 else { break }
+            let method = Int(leU16(zipData, pos + 10))
+            let compressed = Int(leU32(zipData, pos + 20))
+            let nameLen = Int(leU16(zipData, pos + 28))
+            let extraLen = Int(leU16(zipData, pos + 30))
+            let commentLen = Int(leU16(zipData, pos + 32))
+            let localOffset = Int(leU32(zipData, pos + 42))
+            let nameStart = pos + 46
+            guard nameStart + nameLen <= zipData.count else { break }
+            let nameData = zipData.subdata(in: nameStart..<(nameStart + nameLen))
+            let name = String(data: nameData, encoding: .utf8) ?? ""
+            if name.lowercased().hasSuffix(".js") {
+                jsEntries.append((localOffset, method, compressed))
+            }
+            pos = nameStart + nameLen + extraLen + commentLen
+        }
+        
+        for entry in jsEntries {
+            if let content = readZipEntry(zipData, local: entry.local, method: entry.method, compressedSize: entry.size) {
+                return content
+            }
+        }
+        return nil
+    }
+    
+    /// 读取 zip 本地文件头并解出条目内容。
+    private static func readZipEntry(_ data: Data, local: Int, method: Int, compressedSize: Int) -> String? {
+        guard local >= 0, local + 30 <= data.count else { return nil }
+        let nameLen = Int(leU16(data, local + 26))
+        let extraLen = Int(leU16(data, local + 28))
+        let start = local + 30 + nameLen + extraLen
+        guard start >= 0, start + compressedSize <= data.count else { return nil }
+        let raw = data.subdata(in: start..<(start + compressedSize))
+        let bytes: Data
+        if method == 0 {
+            bytes = raw
+        } else if method == 8 {
+            guard let inflated = zlibInflate(raw) else { return nil }
+            bytes = inflated
+        } else {
+            return nil
+        }
+        return String(data: bytes, encoding: .utf8) ?? String(data: bytes, encoding: .isoLatin1)
+    }
+    
+    private static func leU16(_ d: Data, _ o: Int) -> UInt16 {
+        UInt16(d[o]) | (UInt16(d[o + 1]) << 8)
+    }
+    
+    private static func leU32(_ d: Data, _ o: Int) -> UInt32 {
+        UInt32(d[o]) | (UInt32(d[o + 1]) << 8) | (UInt32(d[o + 2]) << 16) | (UInt32(d[o + 3]) << 24)
+    }
+    
+    /// zlib 解压（windowBits 15+32 自动识别 deflate/zlib/gzip）。
+    private static func zlibInflate(_ data: Data) -> Data? {
+        guard !data.isEmpty else { return nil }
+        return data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> Data? in
+            guard let base = raw.baseAddress else { return nil }
+            var stream = z_stream()
+            stream.next_in = UnsafeMutablePointer<UInt8>(mutating: base.assumingMemoryBound(to: UInt8.self))
+            stream.avail_in = uInt(data.count)
+            var out = Data(capacity: data.count * 4)
+            let chunk = 65536
+            var buffer = [UInt8](repeating: 0, count: chunk)
+            var st = inflateInit2_(
+                &stream,
+                15 + 32,
+                (ZLIB_VERSION as NSString).utf8String,
+                Int32(MemoryLayout<z_stream>.size)
+            )
+            guard st == Z_OK else { return nil }
+            while st == Z_OK {
+                var produced = 0
+                buffer.withUnsafeMutableBytes { (rawBuf: UnsafeMutableRawBufferPointer) in
+                    stream.next_out = rawBuf.bindMemory(to: UInt8.self).baseAddress
+                    stream.avail_out = uInt(chunk)
+                    st = inflate(&stream, Z_NO_FLUSH)
+                    produced = chunk - Int(stream.avail_out)
+                }
+                if produced > 0 { out.append(buffer, count: produced) }
+                if st == Z_STREAM_END { break }
+            }
+            inflateEnd(&stream)
+            return st == Z_STREAM_END ? out : nil
+        }
+    }
     
     private init() {}
     
@@ -91,7 +219,19 @@ final class SpiderService {
         
         if let cached = contextCache[api] { return cached }
         
-        let script = try await NetworkManager.shared.getString(from: api)
+        // jar 本质是 zip 容器：TVBox 生态多数 jar 实际打包 JS 脚本，
+        // 解包提取 JS 后执行；纯 Java 字节码 jar 无法在 iOS 运行（无 JVM）。
+        let script: String
+        if api.lowercased().hasSuffix(".jar") {
+            guard let js = try await Self.extractJSFromJar(at: api) else {
+                throw SourceError.spiderFunctionFailed(
+                    "jar 源未找到 JS 脚本：iOS 无法执行 Java 字节码，请改用 JS 版脚本源"
+                )
+            }
+            script = js
+        } else {
+            script = try await NetworkManager.shared.getString(from: api)
+        }
         let context = JSContext()!
         context.exceptionHandler = { _, exception in
             print("[Spider] JS 异常: \(exception?.toString() ?? "unknown")")
