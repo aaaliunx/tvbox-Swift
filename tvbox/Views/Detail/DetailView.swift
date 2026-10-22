@@ -721,8 +721,10 @@ struct FullScreenPlayerView: View {
                         showOSD("亮度 \(Int(UIScreen.main.brightness * 100))%")
                     },
                     onVolume: { delta in
-                        setSystemVolume(delta: delta)
-                        showOSD("音量")
+                        let current = SystemVolumeController.shared.currentVolume()
+                        let target = min(max(current + Float(delta), 0), 1)
+                        SystemVolumeController.shared.setVolume(target)
+                        showOSD("音量 \(Int(target * 100))%")
                     },
                     onTap: { showControls() }
                 )

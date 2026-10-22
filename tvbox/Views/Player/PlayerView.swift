@@ -86,7 +86,8 @@ struct FullScreenGestureLayer: View {
                     DragGesture(minimumDistance: 8)
                         .onChanged { value in
                             let startX = value.startLocation.x
-                            let delta = -value.translation.height / 300.0
+                            // 灵敏度：全屏高度（约 800pt）滑满 ≈ 1.0 档位，避免滑动过快。
+                            let delta = -value.translation.height / 800.0
                             if startX < geometry.size.width * 0.5 {
                                 onBrightness(delta)
                             } else {
@@ -101,11 +102,34 @@ struct FullScreenGestureLayer: View {
     }
 }
 
-/// 系统音量调节（通过 MPVolumeView 的私有 UISlider 设置系统音量）。
-func setSystemVolume(delta: CGFloat) {
-    let volumeView = MPVolumeView()
-    guard let slider = volumeView.subviews.compactMap({ $0 as? UISlider }).first else { return }
-    slider.value = min(max(slider.value + Float(delta), 0), 1)
+/// 系统音量控制器：MPVolumeView 必须挂载到窗口后才同步系统音量，
+/// 离屏创建的 slider 设置 value 无效。全局单例 + 挂载一次。
+final class SystemVolumeController {
+    static let shared = SystemVolumeController()
+
+    private let volumeView = MPVolumeView()
+    private var slider: UISlider? {
+        volumeView.subviews.compactMap { $0 as? UISlider }.first
+    }
+
+    private func attachIfNeeded() {
+        guard volumeView.superview == nil,
+              let window = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first?.windows.first else { return }
+        volumeView.frame = CGRect(x: -100, y: -100, width: 0, height: 0)
+        volumeView.alpha = 0.01
+        window.addSubview(volumeView)
+    }
+
+    func currentVolume() -> Float {
+        slider?.value ?? 0.5
+    }
+
+    func setVolume(_ value: Float) {
+        attachIfNeeded()
+        slider?.value = min(max(value, 0), 1)
+    }
 }
 #endif
 
