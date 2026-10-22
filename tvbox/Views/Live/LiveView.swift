@@ -190,7 +190,6 @@ struct LiveView: View {
                     urlString: urlString,
                     sharedController: livePlayerController,
                     activityToken: vlcInteractionToken,
-                    hidesBuiltinControls: true,
                     onPlaybackFailed: {
                         handlePlaybackFailure(trigger: "vlc_error")
                     },
@@ -199,7 +198,8 @@ struct LiveView: View {
                     },
                     onUserActivity: {
                         reportUserActivity()
-                    }
+                    },
+                    hidesBuiltinControls: true
                 )
                 .ignoresSafeArea()
                 .id("vlc-live-\(urlString)-\(viewModel.currentChannel?.id ?? "")")
