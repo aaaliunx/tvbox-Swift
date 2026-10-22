@@ -1,0 +1,45 @@
+# Cirrus CI：无 Mac 环境下编译未签名 iOS IPA（Apple Silicon 免费任务，排队极短）
+# 用法：本仓库推送后自动构建，产物 TVBox-unsigned.ipa 上传为 artifact。
+
+task:
+  name: build-ipa
+  # Apple Silicon 免费镜像（含 Xcode 16），规避 GitHub Actions macos 排队。
+  macos_instance:
+    image: ghcr.io/cirruslabs/macos-sequoia-xcode:16
+  timeout_in: 60m
+
+  generate_script:
+    - |
+      set -e
+      which xcodegen || brew install xcodegen
+      xcodebuild -version
+      xcodegen generate
+      xcodebuild -list -project tvbox.xcodeproj
+
+  build_script:
+    - |
+      set -e
+      xcodebuild archive \
+        -project tvbox.xcodeproj \
+        -scheme tvbox \
+        -configuration Release \
+        -destination "generic/platform=iOS" \
+        -archivePath build/tvbox.xcarchive \
+        CODE_SIGNING_ALLOWED=NO
+
+  package_script:
+    - |
+      set -e
+      APP_PATH="build/tvbox.xcarchive/Products/Applications/TVBox.app"
+      test -d "$APP_PATH" || { echo "未找到 TVBox.app"; exit 1; }
+      rm -rf build/ipa
+      mkdir -p build/ipa/Payload
+      cp -R "$APP_PATH" build/ipa/Payload/
+      cd build/ipa
+      zip -q -r -y ../../TVBox-unsigned.ipa Payload/
+      cd ../..
+      ls -lh TVBox-unsigned.ipa
+
+  ipa_artifact:
+    path: "TVBox-unsigned.ipa"
+    type: binary
