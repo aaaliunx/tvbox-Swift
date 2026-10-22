@@ -113,9 +113,10 @@ struct FullScreenGestureLayer: View {
                 .onTapGesture {
                     onTap()
                 }
-                // 长按 0.6s 开始倍速，按住期间每 0.9s 提升一档（最高 6x），松手恢复原速。
+                // 长按 0.7s 开始倍速，按住期间每 0.9s 提升一档（最高 6x），
+                // 任意方式松手（原地抬起 / 长按后拖动结束）都恢复原速。
                 .gesture(
-                    LongPressGesture(minimumDuration: 0.6)
+                    LongPressGesture(minimumDuration: 0.7)
                         .sequenced(before: DragGesture(minimumDistance: 0))
                         .onChanged { value in
                             if case .first(true) = value {
@@ -124,7 +125,9 @@ struct FullScreenGestureLayer: View {
                         }
                         .onEnded { value in
                             switch value {
-                            case .first(true), .second(true, _):
+                            // .second(_,_) 覆盖长按后原地松手（drag 第二段失败）的场景，
+                            // 避免倍速任务永不结束导致一直加速。
+                            case .first(true), .second(_, _):
                                 onLongPressEnded()
                             default:
                                 break

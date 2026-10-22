@@ -908,6 +908,8 @@ struct LiveFullScreenPlayerView: View {
                     onDragEnded: {
                         brightnessGestureStart = nil
                         volumeGestureStart = nil
+                        // 兜底：任何拖动手势结束都确保倍速恢复（防止长按任务残留）。
+                        endLiveLongPressSpeed()
                     }
                 )
             }
@@ -990,6 +992,7 @@ struct LiveFullScreenPlayerView: View {
         .onDisappear {
             DeviceOrientation.forcePortrait()
             hideControlsTask?.cancel()
+            endLiveLongPressSpeed()
         }
     }
 

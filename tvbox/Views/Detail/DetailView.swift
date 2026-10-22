@@ -751,6 +751,8 @@ struct FullScreenPlayerView: View {
                         brightnessGestureStart = nil
                         volumeGestureStart = nil
                         seekStartTime = nil
+                        // 兜底：任何拖动手势结束都确保倍速恢复（防止长按任务残留）。
+                        endLongPressSpeed(player: systemController?.player)
                     }
                 )
             }
@@ -841,6 +843,7 @@ struct FullScreenPlayerView: View {
         .onDisappear {
             DeviceOrientation.forcePortrait()
             hideControlsTask?.cancel()
+            endLongPressSpeed(player: systemController?.player)
         }
         #endif
     }
