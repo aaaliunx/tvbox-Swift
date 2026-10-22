@@ -16,6 +16,12 @@ final class SpiderService {
     /// JS 调用串行队列。
     private let executionQueue = DispatchQueue(label: "tvbox.spider.execution")
     
+    /// GBK/GB18030 编码（部分老站页面非 UTF-8）。
+    private static let gbkEncoding: String.Encoding = {
+        let cf = CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)
+        return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cf))
+    }()
+    
     private init() {}
     
     /// 脚本 URL 是否可支持（http/https 脚本，而非 jar:// Java 包）。
@@ -109,7 +115,7 @@ final class SpiderService {
             let task = URLSession.shared.dataTask(with: request) { data, _, _ in
                 if let data {
                     result = String(data: data, encoding: .utf8)
-                        ?? String(data: data, encoding: .gbk)
+                        ?? String(data: data, encoding: Self.gbkEncoding)
                 }
                 semaphore.signal()
             }

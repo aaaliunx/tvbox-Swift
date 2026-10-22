@@ -702,7 +702,12 @@ final class VLCPlayerController: NSObject, ObservableObject, VLCMediaPlayerDeleg
             mediaPlayer.videoAspectRatio = nil
             return
         }
-        mediaPlayer.videoAspectRatio = option.vlcAspectRatio
+        // VLCKit 的 videoAspectRatio 是 C 字符串指针，需 strdup 拷贝。
+        if let ratio = option.vlcAspectRatio {
+            mediaPlayer.videoAspectRatio = strdup(ratio)
+        } else {
+            mediaPlayer.videoAspectRatio = nil
+        }
     }
     
     private func syncDecodeModeFromSettings() {
@@ -940,7 +945,10 @@ struct VLCVodPlayerView: View {
     @State private var playbackTimeoutText: String?
     /// 字幕轨道菜单状态。
     @State private var showSubtitleMenu = false
+    /// VLC 字幕轨道列表（仅 macOS VLCKit 提供轨道枚举 API）。
+    #if os(macOS)
     @State private var subtitleTracks: [VLCVideoSubtitle] = []
+    #endif
     @State private var currentSubtitleIndex: Int = -1
     
     private var controller: VLCPlayerController {
@@ -1122,7 +1130,11 @@ struct VLCVodPlayerView: View {
                     }
                 }
                 
-                ForEach(Array(subtitleTracks.enumerated()), id: \.offset) { index, track in
+                // 轨道列表仅 macOS VLCKit 提供枚举 API；iOS 无轨道枚举接口，
+                // 依赖 VLC 自动加载内嵌字幕，此处仅提供关闭操作。
+                #if os(macOS)
+                ForEach(Array(subtitleTracks.indices), id: \.self) { i in
+                    let track = subtitleTracks[i]
                     Button {
                         controller.mediaPlayer.currentVideoSubTitleIndex = track.index
                         currentSubtitleIndex = Int(track.index)
@@ -1140,6 +1152,7 @@ struct VLCVodPlayerView: View {
                         }
                     }
                 }
+                #endif
             }
             .navigationTitle("字幕")
             #if os(iOS)
@@ -1149,18 +1162,22 @@ struct VLCVodPlayerView: View {
         .presentationDetents([.height(320)])
     }
     
-    /// 刷新 VLC 字幕轨道列表。
+    /// 刷新 VLC 字幕轨道列表（仅 macOS VLCKit 提供轨道枚举 API）。
+    #if os(macOS)
     private func refreshSubtitleTracks() {
         subtitleTracks = controller.mediaPlayer.videoSubTitles ?? []
         currentSubtitleIndex = Int(controller.mediaPlayer.currentVideoSubTitleIndex)
     }
+    #endif
     
     /// 播放后延迟刷新字幕轨道（VLC 异步加载轨道）。
     private func scheduleSubtitleRefresh() {
+        #if os(macOS)
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             refreshSubtitleTracks()
         }
+        #endif
     }
     
     /// 单击切换控制层显示/隐藏。
@@ -1376,8 +1393,8 @@ struct VLCVodPlayerView: View {
                 
                 Spacer()
                 
-                // 右：字幕菜单（仅 VLC 引擎有轨道时展示）+ 全屏
-                #if os(iOS)
+                // 右：字幕菜单（仅 macOS VLCKit 有轨道枚举 API 时展示）+ 全屏
+                #if os(macOS)
                 if !subtitleTracks.isEmpty {
                     Button {
                         wakeUpControls()

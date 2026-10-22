@@ -7,6 +7,12 @@ final class SniffService {
     
     private init() {}
     
+    /// GBK/GB18030 编码（部分老站页面非 UTF-8）。
+    private static let gbkEncoding: String.Encoding = {
+        let cf = CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)
+        return String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cf))
+    }()
+    
     /// 候选嗅探正则（按优先级排序）。
     private static let sniffPatterns: [NSRegularExpression] = [
         // 常见 m3u8（含带 token 参数）
@@ -63,7 +69,7 @@ final class SniffService {
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse,
                http.statusCode == 200,
-               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .gbk) {
+               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: Self.gbkEncoding) {
                 content = text
             }
         } catch {
