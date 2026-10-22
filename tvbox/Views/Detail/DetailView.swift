@@ -900,7 +900,7 @@ struct FullScreenPlayerView: View {
         isFullScreenPlaying = player.timeControlStatus == .playing
     }
 
-    /// 长按倍速：2x 起步，按住每 0.9s 提升一档，最高 6x。
+    /// 长按倍速：2x 起步，按住每 0.9s 提升一档，最高 3x。
     private func beginLongPressSpeed(player: AVPlayer?) {
         guard let player else { return }
         longPressSpeed = 2.0
@@ -911,7 +911,7 @@ struct FullScreenPlayerView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 900_000_000)
                 guard !Task.isCancelled else { return }
-                longPressSpeed = min(longPressSpeed + 1.0, 6.0)
+                longPressSpeed = min(longPressSpeed + 1.0, 3.0)
                 player.rate = longPressSpeed
                 showOSD("倍速 \(String(format: "%.0f", longPressSpeed))x")
             }

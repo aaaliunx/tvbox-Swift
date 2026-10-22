@@ -73,7 +73,8 @@ import MediaPlayer
 
 /// 全屏页手势层：水平滑动快进/快退、左侧垂直滑动调亮度、右侧垂直滑动调音量、
 /// 单击唤出悬浮按钮、长按画面倍速播放（松手恢复）。
-/// 仅在悬浮按钮隐藏时叠加，避免遮挡播放器控制条。
+/// 采用单个自管理 DragGesture：位移 >12pt 立即进入拖动模式（绝不再触发长按倍速），
+/// 静止按住 0.7s 触发倍速，短按松手视为点击。仅在悬浮按钮隐藏时叠加。
 struct FullScreenGestureLayer: View {
     let onBrightness: (CGSize) -> Void
     let onVolume: (CGSize) -> Void
@@ -84,54 +85,66 @@ struct FullScreenGestureLayer: View {
     let onLongPressEnded: () -> Void
     let onDragEnded: () -> Void
 
+    @State private var pressStartTime: Date?
+    @State private var dragStartX: CGFloat = 0
+    @State private var isSpeedActive = false
+
     var body: some View {
         GeometryReader { geometry in
             Color.clear
                 .contentShape(Rectangle())
                 .gesture(
-                    DragGesture(minimumDistance: 8)
+                    DragGesture(minimumDistance: 0)
                         .onChanged { value in
+                            if pressStartTime == nil {
+                                pressStartTime = Date()
+                                dragStartX = value.startLocation.x
+                            }
+                            let elapsed = Date().timeIntervalSince(pressStartTime ?? Date())
                             let absW = abs(value.translation.width)
                             let absH = abs(value.translation.height)
-                            if absW > absH && absW > 12, let onSeek {
-                                // 水平滑动：滑满全屏 ≈ 180 秒
-                                let offset = Double(value.translation.width / geometry.size.width) * 180.0
-                                onSeek(offset)
-                            } else {
-                                let startX = value.startLocation.x
-                                if startX < geometry.size.width * 0.5 {
-                                    onBrightness(value.translation)
-                                } else {
-                                    onVolume(value.translation)
-                                }
+                            let moved = max(absW, absH)
+
+                            if isSpeedActive {
+                                // 长按倍速已激活：保持倍速，松手在 onEnded 恢复。
+                                return
                             }
-                        }
-                        .onEnded { _ in
-                            onDragEnded()
-                        }
-                )
-                .onTapGesture {
-                    onTap()
-                }
-                // 长按 0.7s 开始倍速，按住期间每 0.9s 提升一档（最高 6x），
-                // 任意方式松手（原地抬起 / 长按后拖动结束）都恢复原速。
-                .gesture(
-                    LongPressGesture(minimumDuration: 0.7)
-                        .sequenced(before: DragGesture(minimumDistance: 0))
-                        .onChanged { value in
-                            if case .first(true) = value {
+
+                            if moved > 12 {
+                                // 进入拖动模式（此后不再触发长按倍速）。
+                                pressStartTime = nil
+                                if absW > absH {
+                                    if let onSeek {
+                                        let offset = Double(value.translation.width / geometry.size.width) * 180.0
+                                        onSeek(offset)
+                                    }
+                                } else {
+                                    if dragStartX < geometry.size.width * 0.5 {
+                                        onBrightness(value.translation)
+                                    } else {
+                                        onVolume(value.translation)
+                                    }
+                                }
+                            } else if elapsed > 0.7 {
+                                // 静止按住 0.7s：倍速开始。
+                                isSpeedActive = true
                                 onLongPressBegan()
                             }
                         }
                         .onEnded { value in
-                            switch value {
-                            // .second(_,_) 覆盖长按后原地松手（drag 第二段失败）的场景，
-                            // 避免倍速任务永不结束导致一直加速。
-                            case .first(true), .second(_, _):
+                            if isSpeedActive {
+                                isSpeedActive = false
                                 onLongPressEnded()
-                            default:
-                                break
+                            } else if let start = pressStartTime {
+                                let elapsed = Date().timeIntervalSince(start)
+                                let moved = max(abs(value.translation.width), abs(value.translation.height))
+                                if elapsed < 0.7 && moved < 12 {
+                                    // 短按：唤出按钮。
+                                    onTap()
+                                }
                             }
+                            pressStartTime = nil
+                            onDragEnded()
                         }
                 )
         }

@@ -1027,7 +1027,7 @@ struct LiveFullScreenPlayerView: View {
         }
     }
 
-    /// 长按倍速：2x 起步，按住每 0.9s 提升一档，最高 6x。
+    /// 长按倍速：2x 起步，按住每 0.9s 提升一档，最高 3x。
     private func beginLiveLongPressSpeed() {
         guard let player = systemPlayer else { return }
         longPressSpeed = 2.0
@@ -1038,7 +1038,7 @@ struct LiveFullScreenPlayerView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 900_000_000)
                 guard !Task.isCancelled else { return }
-                longPressSpeed = min(longPressSpeed + 1.0, 6.0)
+                longPressSpeed = min(longPressSpeed + 1.0, 3.0)
                 player.rate = longPressSpeed
                 showOSD("倍速 \(String(format: "%.0f", longPressSpeed))x")
             }
