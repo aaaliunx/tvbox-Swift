@@ -5,7 +5,7 @@ import SwiftUI
 /// 导致列表滑动时行复用错乱、条目消失），并附带来源站点名。
 struct SearchResultItem: Identifiable, Equatable {
     let id: UUID
-    let video: Movie.Video
+    var video: Movie.Video
     let sourceName: String
     
     init(video: Movie.Video, sourceName: String) {
