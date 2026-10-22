@@ -858,8 +858,9 @@ struct FullScreenPlayerView: View {
             forName: .AVPlayerItemDidPlayToEndTime,
             object: item,
             queue: .main
-        ) { [weak self] _ in
-            self?.onPlaybackEnded?()
+        ) { _ in
+            // FullScreenPlayerView 为 struct（值类型），闭包按值捕获，无循环引用风险。
+            onPlaybackEnded?()
         }
     }
 
