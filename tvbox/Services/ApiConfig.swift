@@ -173,6 +173,26 @@ class ApiConfig: ObservableObject {
             return (config, normalizedUrl)
         }
         
+        // 兼容安卓端加密配置：标准 JSON 解析失败时尝试 base64 解码后重试
+        //（TVBox 生态部分仓库会 base64 整体加密配置内容）。
+        if decodedConfig == nil {
+            let trimmed = cleanedJson.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let base64Data = Data(base64Encoded: trimmed),
+               let decodedText = String(data: base64Data, encoding: .utf8) {
+                let reDecoded = try? decoder.decode(AppConfigData.self, from: Data(decodedText.utf8))
+                if let config = reDecoded, config.hasUsableContent {
+                    return (config, normalizedUrl)
+                }
+                if let multiRepo = try? decoder.decode(MultiRepoConfigData.self, from: Data(decodedText.utf8)) {
+                    return try await fetchConfig(
+                        from: multiRepo.candidateUrls.first.map(Self.normalizeConfigUrl) ?? normalizedUrl,
+                        visitedUrls: nextVisited,
+                        depth: depth + 1
+                    )
+                }
+            }
+        }
+        
         if let multiRepo = try? decoder.decode(MultiRepoConfigData.self, from: data) {
             let candidateUrls = Self.uniqueUrlsInOrder(
                 multiRepo.candidateUrls.map(Self.normalizeConfigUrl)
