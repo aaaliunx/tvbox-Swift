@@ -538,12 +538,38 @@ struct TencentStylePlayerOverlay: View {
                     }
                 }
 
+                // 直播"频道"按钮固定显示（播放控制右侧，不依赖右侧滚动区）。
+                if isLive && channelNames.count > 0 {
+                    Button {
+                        showControls()
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showChannelPanel.toggle()
+                            showEpisodePanel = false
+                            showSourcePanel = false
+                            showRateMenu = false
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "list.bullet")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("频道")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(showChannelPanel ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 Spacer(minLength: 8)
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
-                        // 直播频道按钮
-                        if channelNames.count > 1 {
+                        // 直播频道按钮（固定位置已提供，滚动区不再重复）
+                        if !isLive && channelNames.count > 1 {
                             Button {
                                 showControls()
                                 withAnimation(.easeOut(duration: 0.2)) {
