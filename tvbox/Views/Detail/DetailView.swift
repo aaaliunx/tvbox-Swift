@@ -713,20 +713,46 @@ struct FullScreenPlayerView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             #if os(iOS)
-            // 悬浮按钮隐藏时的手势层：左侧滑亮度、右侧滑音量、单击唤出按钮。
+            // 悬浮按钮隐藏时的手势层：左侧滑亮度、右侧滑音量、单击唤出、长按倍速。
             if !controlsVisible {
                 FullScreenGestureLayer(
-                    onBrightness: { delta in
-                        UIScreen.main.brightness = min(max(UIScreen.main.brightness + delta, 0), 1)
-                        showOSD("亮度 \(Int(UIScreen.main.brightness * 100))%")
+                    onBrightness: { translation in
+                        // 手势开始时快照基准值，滑动期间用基准+累计偏移，
+                        // 避免"读取-设置"闭环导致抖动。
+                        if brightnessGestureStart == nil {
+                            brightnessGestureStart = UIScreen.main.brightness
+                        }
+                        let delta = -translation.height / 800.0
+                        let target = min(max((brightnessGestureStart ?? 0.5) + delta, 0), 1)
+                        UIScreen.main.brightness = target
+                        showOSD("亮度 \(Int(target * 100))%")
                     },
-                    onVolume: { delta in
-                        let current = SystemVolumeController.shared.currentVolume()
-                        let target = min(max(current + Float(delta), 0), 1)
+                    onVolume: { translation in
+                        if volumeGestureStart == nil {
+                            volumeGestureStart = SystemVolumeController.shared.currentVolume()
+                        }
+                        let delta = -translation.height / 800.0
+                        let target = min(max((volumeGestureStart ?? 0.5) + Float(delta), 0), 1)
                         SystemVolumeController.shared.setVolume(target)
                         showOSD("音量 \(Int(target * 100))%")
                     },
-                    onTap: { showControls() }
+                    onTap: { showControls() },
+                    onLongPressBegan: {
+                        // 长按画面倍速 2x，松手恢复原速。
+                        if let player = systemController?.player {
+                            player.rate = 2.0
+                            showOSD("倍速 2.0x")
+                        }
+                    },
+                    onLongPressEnded: {
+                        if let player = systemController?.player {
+                            player.rate = player.defaultRate
+                        }
+                    },
+                    onDragEnded: {
+                        brightnessGestureStart = nil
+                        volumeGestureStart = nil
+                    }
                 )
             }
 
@@ -818,6 +844,9 @@ struct FullScreenPlayerView: View {
     @State private var osdText: String?
     @State private var osdOpacity: Double = 0
     @State private var osdTimer: Timer?
+    /// 亮度/音量手势起点快照（滑动期间基准值，避免闭环抖动）。
+    @State private var brightnessGestureStart: CGFloat?
+    @State private var volumeGestureStart: Float?
 
     private func showControls() {
         withAnimation(.easeOut(duration: 0.2)) {

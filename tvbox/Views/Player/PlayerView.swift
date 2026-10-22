@@ -71,12 +71,15 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
 
 import MediaPlayer
 
-/// 全屏页手势层：左侧垂直滑动调亮度、右侧垂直滑动调音量、单击唤出悬浮按钮。
-/// 仅在悬浮按钮隐藏（控制条可操作期）时叠加，避免遮挡 AVPlayerViewController 控制条。
+/// 全屏页手势层：左侧垂直滑动调亮度、右侧垂直滑动调音量、单击唤出悬浮按钮、
+/// 长按画面倍速播放（松手恢复）。仅在悬浮按钮隐藏时叠加，避免遮挡播放器控制条。
 struct FullScreenGestureLayer: View {
-    let onBrightness: (CGFloat) -> Void
-    let onVolume: (CGFloat) -> Void
+    let onBrightness: (CGSize) -> Void
+    let onVolume: (CGSize) -> Void
     let onTap: () -> Void
+    let onLongPressBegan: () -> Void
+    let onLongPressEnded: () -> Void
+    let onDragEnded: () -> Void
 
     var body: some View {
         GeometryReader { geometry in
@@ -86,18 +89,37 @@ struct FullScreenGestureLayer: View {
                     DragGesture(minimumDistance: 8)
                         .onChanged { value in
                             let startX = value.startLocation.x
-                            // 灵敏度：全屏高度（约 800pt）滑满 ≈ 1.0 档位，避免滑动过快。
-                            let delta = -value.translation.height / 800.0
                             if startX < geometry.size.width * 0.5 {
-                                onBrightness(delta)
+                                onBrightness(value.translation)
                             } else {
-                                onVolume(delta)
+                                onVolume(value.translation)
                             }
+                        }
+                        .onEnded { _ in
+                            onDragEnded()
                         }
                 )
                 .onTapGesture {
                     onTap()
                 }
+                // 长按 0.4s 开始倍速，松手（或长按后拖动结束）恢复原速。
+                .gesture(
+                    LongPressGesture(minimumDuration: 0.4)
+                        .sequenced(before: DragGesture(minimumDistance: 0))
+                        .onChanged { value in
+                            if case .first(true) = value {
+                                onLongPressBegan()
+                            }
+                        }
+                        .onEnded { value in
+                            switch value {
+                            case .first(true), .second(true, _):
+                                onLongPressEnded()
+                            default:
+                                break
+                            }
+                        }
+                )
         }
     }
 }
@@ -111,6 +133,8 @@ final class SystemVolumeController {
     private var slider: UISlider? {
         volumeView.subviews.compactMap { $0 as? UISlider }.first
     }
+    /// 节流：避免拖动期间高频设置触发系统音量 HUD 频闪与卡顿。
+    private var lastSetTime: TimeInterval = 0
 
     private func attachIfNeeded() {
         guard volumeView.superview == nil,
@@ -127,6 +151,9 @@ final class SystemVolumeController {
     }
 
     func setVolume(_ value: Float) {
+        let now = Date().timeIntervalSince1970
+        guard now - lastSetTime > 0.05 else { return }
+        lastSetTime = now
         attachIfNeeded()
         slider?.value = min(max(value, 0), 1)
     }
