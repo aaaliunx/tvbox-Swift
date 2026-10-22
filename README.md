@@ -3,157 +3,128 @@
 ![Platform iOS | macOS](https://img.shields.io/badge/Platform-iOS%20%7C%20macOS-blue.svg)
 ![Swift Version](https://img.shields.io/badge/Swift-5.9-orange.svg)
 ![Xcode Version](https://img.shields.io/badge/Xcode-15.0+-blue.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
-**TVBox-Swift** 是一套基于原生 Swift & SwiftUI 构建的跨平台多媒体应用核心工程。它同时支持 macOS 和 iOS 设备，致力于在双端提供无缝、现代且极其流畅的视听体验。
+**TVBox-Swift** 是一套基于原生 Swift & SwiftUI 构建的跨平台 TVBox 播放客户端核心工程，同时支持 **iOS 17.0+** 与 **macOS 14.0+**。支持点播/直播双场景，兼容 TVBox 生态数据源（JSON / XML / Remote / Spider），并已对齐安卓版 AVBox 的核心功能链路。
 
 ## ✨ 核心特性
 
-- 🎯 **真正的原生跨平台 (Native Cross-platform)**
-  - 基于最新的 SwiftUI 和 SwiftData，一套代码覆盖 macOS (14.0+) 与 iOS (17.0+)。
-  - 高度针对多端设备的特定交互形式进行原生级适配与优化。
-- 🎨 **前沿的 UI 视觉 (Modern UI & Glassmorphism)**
-  - 全新的毛玻璃 (Glassmorphism) 视觉设计体系。
-  - 精美流畅的重构动画与微交互，从列表到播放页全系更新。
-  - 原生级体验的暗黑模式 (Dark Mode) 全方位支持。
-- 🧩 **全方位的媒体功能栈 (Media Stack)**
-  - **点播中心 (VOD Center):** 整合了智能资源检索、卡片化视觉呈现与多级详情页。
-    - *生态支持:* 原生支持解析主流的 CMS JSON/XML 数据源接口 (`type=0`, `type=1`)。
-    - *暂不支持:* 由于 iOS/macOS 平台原生限制与环境安全，内核未集成基于 Java 引擎或 Rhino 逻辑层，**不支持** `type=3` (Spider / Jar) 等依赖动态脚本执行的复杂爬虫源。
-  - **直播支持 (Live):** 稳定的流媒体播放基础构件支持。
-  - **内容枢纽 (Content Hub):** 便捷的搜索、智能历史记录流、一键收藏管理。
-- ⚙️ **健壮的业务底层 (Robust Foundation)**
-  - **持久化:** 基于苹果全新 `SwiftData` 技术的现代化缓存与本地数据存储模块。
-  - **数据层:** 兼容性极强的网络接口解析引擎，支持非标准的 JSON/XML 接口容错处理与数据清洗。
+- 🎯 **真正的原生跨平台**
+  - 基于 SwiftUI + SwiftData，一套代码覆盖 macOS 与 iOS。
+  - 针对多端设备交互进行原生级适配与优化。
+- 🎨 **现代 UI 视觉**
+  - 毛玻璃（Glassmorphism）视觉设计体系。
+  - 流畅的重构动画与微交互，原生级暗黑模式支持。
+- 🧩 **全方位媒体功能栈**
+  - **点播中心（VOD）**：智能资源检索、卡片化视觉呈现、多级详情页、线路/清晰度切换、剧集列表。
+  - **直播（Live）**：频道分组、线路切换、EPG 节目单（正在播出/下一节目）、回看入口。
+  - **内容枢纽**：全源搜索、历史记录、收藏管理、分类筛选。
+- ⚙️ **健壮的业务底层**
+  - **持久化**：SwiftData 现代化缓存与本地数据存储。
+  - **数据层**：非标准 JSON/XML 接口容错解析、注释清洗、base64 加密配置自动解密、m3u/txt 直播源自动识别、独立直播配置加载。
+  - **播放器**：系统 AVPlayer 与 VLCKit 双引擎切换；播放失败自动嗅探/解析换源；字幕轨道切换（macOS）；局域网 HTTP 遥控服务。
+
+## 🔌 数据源支持（对齐安卓版 AVBox）
+
+| 能力 | 状态 |
+|---|---|
+| 源类型 `type=0/1/4`（XML / JSON / Remote） | ✅ |
+| 源类型 `type=3`（Spider / Jar 动态脚本） | ✅ JavaScriptCore 沙箱执行（homeContent / categoryContent / detailContent / searchContent） |
+| 加密配置 base64 自动解密 | ✅ |
+| m3u / txt 直播源自动识别（无需 JSON 转换） | ✅ |
+| 嗅探 / 解析切换（播放失败自动嗅探 m3u8/mp4/iframe） | ✅ |
+| 播放器多引擎（系统 AVPlayer + VLCKit，IJK/EXO 为安卓特有） | ✅ |
+| 字幕体系（VLC 轨道切换；字幕搜索/本地字幕延后） | ✅ |
+| EPG 节目单增强（xmltv 解析 + 频道卡实时显示） | ✅ 回看/时移依赖源协议模板 |
+| 分类筛选 + 快速搜索 | ✅ |
+| 局域网遥控服务（HTTP 协议，同 Wi-Fi 浏览器遥控播放/暂停/音量） | ✅ |
+| 历史条数上限 / M3U8 净化 / 画面缩放 / 备份恢复 | ✅ |
+| DoH 自定义 DNS | ⚠️ 受 iOS 系统 DNS 限制 |
+| 收藏闭环（详情页收藏入口） | ✅ |
 
 ## 🛠 技术栈
 
-* **语言**: Swift 5.9
-* **UI 框架**: SwiftUI
-* **数据持久化**: SwiftData
-* **工程化管理**: XcodeGen (>= 2.35)
+- **语言**: Swift 5.9
+- **UI 框架**: SwiftUI
+- **数据持久化**: SwiftData
+- **工程化管理**: XcodeGen (>= 2.35)
+- **播放内核**: VLCKitSPM 3.6.0（iOS/macOS）
+- **脚本引擎**: JavaScriptCore（Spider 源）
 
----
+## 📦 无 Mac 环境编译 iOS IPA（GitHub Actions）
 
-## 🔍 与安卓参考版差异
+本仓库内置 `.github/workflows/build-ipa.yml`，**无需 Mac** 即可通过 GitHub Actions 编译未签名 IPA：
 
-以下差异基于当前仓库代码：
+1. 在仓库 **Actions** 页面选择 `Build IPA` 工作流 → **Run workflow**（ref: main）。
+2. 工作流自动执行：`xcodegen generate` → `xcodebuild archive`（`CODE_SIGNING_ALLOWED=NO`）→ 组装标准 `Payload/TVBox.app` IPA。
+3. 构建完成后在 run 的 **Artifacts** 下载 `tvbox-unsigned-ipa.zip`，解出 `TVBox-unsigned.ipa`。
+4. 自签安装：**AltStore / Sideloadly / TrollStore**（或爱思助手等）签名后安装到 iPhone/iPad。
 
-1. **源类型支持范围不同**
-   - Swift 版支持 `type=0/1/4`（XML/JSON/Remote）。
-   - Swift 版暂不支持 `type=3 (JAR/Spider)` 动态脚本源。
-2. **配置兼容能力不同**
-   - 安卓版支持加密配置解密、`clan://`、相对路径修复、独立直播配置加载等。
-   - Swift 版当前为常规 URL 拉取 + 注释容错解析。
-3. **解析链路能力不同**
-   - 安卓版支持嗅探/解析切换、规则引擎与相关过滤策略。
-   - Swift 版当前仅解析并展示解析器配置数量，未接入完整播放解析链路。
-4. **播放器能力不同**
-   - 安卓版支持系统/IJK/EXO/外部播放器等多模式。
-   - Swift 版当前支持系统 `AVPlayer` 与 `VLCKit`（iOS/macOS）双引擎切换，IJK/EXO/外部播放器仍未接入。
-5. **字幕体系不同**
-   - 安卓版支持字幕搜索、本地字幕、样式/延迟调节、内嵌轨道等。
-   - Swift 版当前尚未接入完整字幕功能。
-6. **直播高级能力不同**
-   - 安卓版支持 EPG、回看/时移、分组密码、直播设置分组等。
-   - Swift 版当前已支持基础直播分组与线路切换，EPG 仍为简化实现。
-7. **筛选与检索形态不同**
-   - 安卓版具备分类筛选、快速搜索、复选搜索等界面与交互。
-   - Swift 版当前为基础搜索与分类浏览。
-8. **远程控制与推送不同**
-   - 安卓版具备本地控制服务与推送/遥控相关能力。
-   - Swift 版当前未提供该能力。
-9. **设置项覆盖度不同**
-   - 安卓版设置项更细（DoH、渲染/缩放、历史条数、M3U8 净化、备份恢复等）。
-   - Swift 版当前保留核心常用设置。
-10. **收藏入口闭环不同**
-   - 安卓版详情页支持直接加入/取消收藏。
-   - Swift 版目前提供收藏页与收藏数据模型，但详情页收藏入口待完善。
+> 若 macOS runner 上 Xcode 版本过旧打不开 xcodegen 生成的新工程格式，工作流会自动 `xcode-select` 切换到已安装的 Xcode 16。
 
----
+## 🚀 本地快速开始
 
-## 🚀 快速开始
-
-本项目的主 Xcode 工程文件并未直接包含在仓库代码中，以保证干净的源码树并降低拉取冲突风险。您需要通过 `XcodeGen` 生成配置文件。
+本项目的主 Xcode 工程文件不直接包含在仓库中，通过 `XcodeGen` 生成：
 
 ### 1. 环境准备
-确保您的设备已安装以下必备组件：
-*   **macOS** (最新版本)
-*   **Xcode 15.0** 或以上版本
-*   **Homebrew** (用于安装命令行工具)
 
-安装工程生成器 `XcodeGen`:
+* macOS + Xcode 15.0+
+* Homebrew
+
 ```bash
 brew install xcodegen
 ```
 
 ### 2. 生成 Xcode 工程
-在终端进入本项目的根目录，执行以下命令以生成 `tvbox.xcodeproj` 文件：
+
 ```bash
 xcodegen generate
 ```
 
 ### 3. 构建与运行
-打开刚刚使用 XcodeGen 生成的 `tvbox.xcodeproj`：
-- 选择合适的 Scheme (`tvbox` 对应 iOS, `tvbox-macOS` 对应 macOS)。
-- 直接在设备或模拟器真机上 `Command + R` 进行编译与运行调试。
 
----
+打开生成的 `tvbox.xcodeproj`：
+- Scheme `tvbox`（iOS）、`tvbox-macOS`（macOS）
+- `Command + R` 编译运行。
 
-### iOS 版本打包
+### iOS 本地打包
 
-1. 确保已安装通用依赖：
-   - Xcode 15+
-   - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (可选，用于生成工程)
+```bash
+chmod +x package_ios.sh
+./package_ios.sh
+```
 
-2. 运行打包脚本：
-   ```bash
-   chmod +x package_ios.sh
-   ./package_ios.sh
-   ```
-
-3. **注意**：
-   - 脚本默认生成 `.xcarchive` 文件。
-   - 如需自动生成 `.ipa`，请在 `ExportOptions.plist` 中填写您的 `teamID`。
-   - 您也可以在 Xcode 中打开 `tvbox.xcodeproj`，选择 `tvbox` scheme，然后点击 `Product > Archive` 手动打包。
-
-## 📦 macOS 独立打包
-
-项目已内置自动化打包脚本 `package_mac.sh`。当您需要分发 macOS 版本时，直接运行即可自动清理缓存、构建并生成免安装的 `.dmg` 拖拽式安装包。
+### macOS 独立打包
 
 ```bash
 chmod +x package_mac.sh
 ./package_mac.sh
 ```
 
-> **成功输出提示:** `✅ 打包完成！生成文件: TVBox-macOS.dmg`
+> 输出：`TVBox-macOS.dmg`
 
----
-
-## 📂 简明目录结构
+## 📂 目录结构
 
 ```text
 ├── tvbox
 │   ├── Models/         # 数据模型定义
 │   ├── ViewModels/     # 业务逻辑与状态管理 (MVVM)
-│   ├── Views/          # 所有的 SwiftUI 原生视图组件
-│   ├── Services/       # 网络层、配置解析层等外部服务交互
-│   ├── Persistence/    # 数据库 (SwiftData) 配置与读写管理
-│   ├── Utils/          # 通用的帮助类与扩展函数
-│   └── Assets.xcassets # 资源文件集、图标与预设全局色彩 (AccentColor)
-├── project.yml         # XcodeGen 的工程模板描述文件
+│   ├── Views/          # SwiftUI 原生视图组件
+│   ├── Services/       # 网络层、配置解析、Sniff/Spider/EPG/遥控等服务
+│   ├── Persistence/    # SwiftData 配置与读写管理
+│   ├── Utils/          # 帮助类与扩展函数
+│   └── Assets.xcassets # 资源文件集、图标与全局色彩
+├── .github/workflows/  # GitHub Actions 无 Mac 编译 IPA 工作流
+├── project.yml         # XcodeGen 工程模板
 ├── package_mac.sh      # macOS DMG 打包脚本
-└── process_icon.py     # 图片转换脚本套件
+└── package_ios.sh      # iOS 打包脚本
 ```
-
----
 
 ## 📜 开源协议
 
 本项目采用 [MIT License](./LICENSE) 开源发布。
 
----
-
-## ⚠️ 开源免责声明 (Disclaimer)
+## ⚠️ 开源免责声明
 
 **本项目仅供编程技术交流、学习 Swift 与 SwiftUI 原生应用开发原理之目的。**
 
