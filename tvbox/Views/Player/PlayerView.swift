@@ -265,6 +265,8 @@ struct TencentStylePlayerOverlay: View {
     var onSelectGroup: ((Int) -> Void)? = nil
     /// 是否为直播：隐藏倍速与 10s 快进/后退按钮，左右滑动不做进度调节。
     var isLive: Bool = false
+    /// 播放失败等场景下保持控制栏常显（不自动隐藏）。
+    var keepControlsVisible: Bool = false
 
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -291,44 +293,50 @@ struct TencentStylePlayerOverlay: View {
         ZStack {
             Color.clear
 
-            // 控制栏隐藏时的手势层（腾讯逻辑：控制栏显示期不响应全屏手势）。
-            if !controlsVisible {
-                FullScreenGestureLayer(
-                    onBrightness: { translation in
-                        if brightnessGestureStart == nil {
-                            brightnessGestureStart = UIScreen.main.brightness
-                        }
-                        let delta = -translation.height / 800.0
-                        let target = min(max((brightnessGestureStart ?? 0.5) + delta, 0), 1)
-                        UIScreen.main.brightness = target
-                        showOSD("亮度 \(Int(target * 100))%")
-                    },
-                    onVolume: { translation in
-                        if volumeGestureStart == nil {
-                            volumeGestureStart = SystemVolumeController.shared.currentVolume()
-                        }
-                        let delta = -translation.height / 800.0
-                        let target = min(max((volumeGestureStart ?? 0.5) + Float(delta), 0), 1)
-                        SystemVolumeController.shared.setVolume(target)
-                        showOSD("音量 \(Int(target * 100))%")
-                    },
-                    onSeek: { offset in
-                        // 直播无进度概念：左右滑动不调节进度。
-                        guard !isLive else { return }
-                        seekBy(offset)
-                    },
-                    onTap: { showControls() },
-                    onDoubleTap: { onPlayPause?() },
-                    onLongPressBegan: { onLongPressBegan?() },
-                    onLongPressEnded: { onLongPressEnded?() },
-                    onDragEnded: {
-                        brightnessGestureStart = nil
-                        volumeGestureStart = nil
-                        seekStartTime = nil
-                        onLongPressEnded?()
+            // 手势层常驻（播放失败黑屏时同样可单击唤出控制栏）。
+            // 控制栏显示期由上层 topBar/controlsBar 拦截按钮点击；隐藏期手势层全屏响应。
+            FullScreenGestureLayer(
+                onBrightness: { translation in
+                    if brightnessGestureStart == nil {
+                        brightnessGestureStart = UIScreen.main.brightness
                     }
-                )
-            }
+                    let delta = -translation.height / 800.0
+                    let target = min(max((brightnessGestureStart ?? 0.5) + delta, 0), 1)
+                    UIScreen.main.brightness = target
+                    showOSD("亮度 \(Int(target * 100))%")
+                },
+                onVolume: { translation in
+                    if volumeGestureStart == nil {
+                        volumeGestureStart = SystemVolumeController.shared.currentVolume()
+                    }
+                    let delta = -translation.height / 800.0
+                    let target = min(max((volumeGestureStart ?? 0.5) + Float(delta), 0), 1)
+                    SystemVolumeController.shared.setVolume(target)
+                    showOSD("音量 \(Int(target * 100))%")
+                },
+                onSeek: { offset in
+                    // 直播无进度概念：左右滑动不调节进度。
+                    guard !isLive else { return }
+                    seekBy(offset)
+                },
+                onTap: {
+                    // 播放失败等 keepControlsVisible 场景：点击空白切换隐藏/显示。
+                    if controlsVisible {
+                        hideControlsNow()
+                    } else {
+                        showControls()
+                    }
+                },
+                onDoubleTap: { onPlayPause?() },
+                onLongPressBegan: { onLongPressBegan?() },
+                onLongPressEnded: { onLongPressEnded?() },
+                onDragEnded: {
+                    brightnessGestureStart = nil
+                    volumeGestureStart = nil
+                    seekStartTime = nil
+                    onLongPressEnded?()
+                }
+            )
 
             // OSD（快进/后退时间、亮度、音量、倍速提示）
             if let osdText {
@@ -902,6 +910,8 @@ struct TencentStylePlayerOverlay: View {
             controlsVisible = true
         }
         hideControlsTask?.cancel()
+        // 播放失败等场景：控制栏常显，不自动隐藏。
+        guard !keepControlsVisible else { return }
         let task = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_500_000_000)
             guard !Task.isCancelled else { return }

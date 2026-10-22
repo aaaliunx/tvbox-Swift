@@ -1004,6 +1004,10 @@ struct LiveFullScreenPlayerView: View {
     @State private var isLandscapeLeft = false
     /// 切后台再返回时重新应用播放器朝向。
     @Environment(\.scenePhase) private var scenePhase
+    /// 全屏播放失败状态：失败时控制栏常显并显示提示。
+    @State private var playbackFailed = false
+    @State private var fullFailObserver: NSObjectProtocol?
+    @State private var fullFailItemObserver: NSKeyValueObservation?
 
     var body: some View {
         ZStack {
@@ -1041,9 +1045,31 @@ struct LiveFullScreenPlayerView: View {
                             groupNames: groupNames,
                             selectedGroupIndex: selectedGroupIndex,
                             onSelectGroup: { index in onSelectGroup?(index) },
-                            isLive: true
+                            isLive: true,
+                            keepControlsVisible: playbackFailed
                         )
                         // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
+
+                        // 播放失败提示：控制栏保持显示，可切线路/频道。
+                        if playbackFailed {
+                            VStack(spacing: 10) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 34))
+                                    .foregroundColor(.white.opacity(0.85))
+                                Text("直播源无法播放")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                Text("控制栏已保持显示，可切换线路或频道")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 16)
+                            .background(Color.black.opacity(0.55))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .allowsHitTesting(false)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -1068,6 +1094,7 @@ struct LiveFullScreenPlayerView: View {
         // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制目标朝向。
         .onAppear {
             showControls()
+            bindLiveFullScreenFailureObserver()
             // 转场期间多次尝试，确保方向落地。
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 applyPlayerOrientation(player: systemPlayer)
@@ -1088,9 +1115,37 @@ struct LiveFullScreenPlayerView: View {
             }
         }
         .onDisappear {
+            if let observer = fullFailObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            fullFailItemObserver = nil
             DeviceOrientation.forcePortrait()
             hideControlsTask?.cancel()
             endLiveLongPressSpeed()
+        }
+    }
+
+    /// 监听全屏播放失败：失败时保持控制栏常显，避免黑屏后无操作入口。
+    private func bindLiveFullScreenFailureObserver() {
+        fullFailItemObserver = nil
+        if let observer = fullFailObserver {
+            NotificationCenter.default.removeObserver(observer)
+            fullFailObserver = nil
+        }
+        guard let player = systemPlayer, let item = player.currentItem else { return }
+        fullFailItemObserver = item.observe(\.status, options: [.new]) { observedItem, _ in
+            if observedItem.status == .failed {
+                Task { @MainActor in
+                    playbackFailed = true
+                }
+            }
+        }
+        fullFailObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { _ in
+            playbackFailed = true
         }
     }
 
