@@ -8,10 +8,11 @@ struct HomeView: View {
     /// 分类筛选面板状态。
     @State private var showFilterSheet = false
     
-    // 网格布局
+    // 网格布局（腾讯视频式：一屏 2 张大卡）
     #if os(iOS)
     private let columns = [
-        GridItem(.adaptive(minimum: 100, maximum: 140), spacing: 10)
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
     ]
     #else
     private let columns = [
@@ -81,16 +82,22 @@ struct HomeView: View {
             
             Spacer()
             
-            // 搜索入口（腾讯视频式：右上角放大镜直达搜索页）
+            // 腾讯视频式搜索框入口：点击直达搜索页
             Button {
                 NotificationCenter.default.post(name: .switchToSearchTab, object: nil)
             } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.85))
-                    .frame(width: 34, height: 34)
-                    .background(Color.white.opacity(0.08))
-                    .clipShape(Circle())
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.45))
+                    Text("搜索影视、电视剧、动漫")
+                        .font(.system(size: 13))
+                        .foregroundColor(.white.opacity(0.45))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.white.opacity(0.08))
+                .clipShape(Capsule())
             }
             .buttonStyle(.plain)
         }

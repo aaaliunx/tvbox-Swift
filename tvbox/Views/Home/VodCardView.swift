@@ -23,7 +23,7 @@ struct VodCardView: View {
     @State private var isHovered = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             // 封面图
             ZStack(alignment: .bottomLeading) {
                 CachedAsyncImage(url: URL.posterURL(from: video.pic), onLoaded: onPosterLoaded) { image in
@@ -36,29 +36,28 @@ struct VodCardView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius))
-                .shadow(color: .black.opacity(0.4), radius: 8, x: 0, y: 4)
+                .shadow(color: .black.opacity(0.4), radius: 6, x: 0, y: 3)
                 
-                // 底部渐变叠加（用于保护备注文字）
-                if !video.note.isEmpty {
-                    LinearGradient(
-                        colors: [.black.opacity(0.8), .clear],
-                        startPoint: .bottom,
-                        endPoint: .center
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius))
-                }
+                // 底部渐变（保护角标文字）
+                LinearGradient(
+                    colors: [.black.opacity(0.75), .clear],
+                    startPoint: .bottom,
+                    endPoint: .center
+                )
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius))
                 
-                // 备注标签
+                // 备注角标（腾讯视频式：海报底部黑底白字，如"更新至23集/全16集"）
                 if !video.note.isEmpty {
                     Text(video.note)
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule().fill(Color.orange.opacity(0.9))
-                        )
-                        .padding(8)
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.45))
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .padding(.bottom, 6)
+                        .padding(.leading, 8)
                 }
             }
             // 悬停缩放只增强视觉反馈，不影响点击命中区域。
@@ -68,10 +67,10 @@ struct VodCardView: View {
                 isHovered = hovering
             }
             
-            // 标题
-            VStack(alignment: .leading, spacing: 2) {
+            // 标题 + 副标题（腾讯视频式）
+            VStack(alignment: .leading, spacing: 3) {
                 Text(video.name)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.white)
                     .lineLimit(1)
                 
@@ -79,9 +78,10 @@ struct VodCardView: View {
                     Text(video.type)
                         .font(.system(size: 10))
                         .foregroundColor(.white.opacity(0.5))
+                        .lineLimit(1)
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 2)
         }
         #if os(iOS)
         .frame(minWidth: 44, minHeight: 44)
