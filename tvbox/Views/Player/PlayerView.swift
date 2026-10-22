@@ -247,6 +247,14 @@ struct TencentStylePlayerOverlay: View {
     var onClose: (() -> Void)? = nil
     var onLongPressBegan: (() -> Void)? = nil
     var onLongPressEnded: (() -> Void)? = nil
+    /// 播放源（线路）名称列表；为空时不显示"线路"按钮。
+    var sourceNames: [String] = []
+    var selectedSourceIndex: Int = 0
+    var onSelectSource: ((Int) -> Void)? = nil
+    /// 剧集名称列表；为空时不显示"选集"按钮。
+    var episodeNames: [String] = []
+    var selectedEpisodeIndex: Int = 0
+    var onSelectEpisode: ((Int) -> Void)? = nil
 
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -256,6 +264,8 @@ struct TencentStylePlayerOverlay: View {
     @State private var draggingSeconds: Double = 0
     @State private var rate: Float = 1.0
     @State private var showRateMenu = false
+    @State private var showEpisodePanel = false
+    @State private var showSourcePanel = false
     @State private var osdText: String?
     @State private var osdOpacity: Double = 0
     @State private var osdTimer: Timer?
@@ -395,6 +405,18 @@ struct TencentStylePlayerOverlay: View {
 
     private var controlsBar: some View {
         VStack(spacing: 10) {
+            // 选集面板（腾讯风格弹层）
+            if showEpisodePanel {
+                episodePanel
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            // 线路面板（腾讯风格弹层）
+            if showSourcePanel {
+                sourcePanel
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
             // 倍速菜单（腾讯风格：点击倍速后向上弹出选项）
             if showRateMenu {
                 HStack(spacing: 8) {
@@ -486,11 +508,55 @@ struct TencentStylePlayerOverlay: View {
 
                 Spacer()
 
-                // 功能按钮：倍速 / 旋转 / 退出（腾讯视频底部右侧一排）
+                // 选集按钮（腾讯视频底部右侧"选集"同款）
+                if episodeNames.count > 1 {
+                    Button {
+                        showControls()
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showEpisodePanel.toggle()
+                            showSourcePanel = false
+                            showRateMenu = false
+                        }
+                    } label: {
+                        Text("选集")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(showEpisodePanel ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // 线路（播放源）按钮
+                if sourceNames.count > 1 {
+                    Button {
+                        showControls()
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showSourcePanel.toggle()
+                            showEpisodePanel = false
+                            showRateMenu = false
+                        }
+                    } label: {
+                        Text("线路")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(showSourcePanel ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // 倍速按钮
                 Button {
                     showControls()
                     withAnimation(.easeOut(duration: 0.2)) {
                         showRateMenu.toggle()
+                        showEpisodePanel = false
+                        showSourcePanel = false
                     }
                 } label: {
                     Text("倍速")
@@ -536,6 +602,78 @@ struct TencentStylePlayerOverlay: View {
             )
         )
         .environment(\.colorScheme, .dark)
+    }
+
+    // MARK: - 选集面板
+
+    private var episodePanel: some View {
+        VStack(spacing: 10) {
+            Text("选集")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.9))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(episodeNames.indices, id: \.self) { i in
+                        Button {
+                            selectEpisode(i)
+                        } label: {
+                            Text(episodeNames[i])
+                                .font(.system(size: 12, weight: i == selectedEpisodeIndex ? .bold : .regular))
+                                .foregroundColor(i == selectedEpisodeIndex ? .black : .white)
+                                .lineLimit(1)
+                                .frame(maxWidth: 110)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(i == selectedEpisodeIndex ? Color.white : Color.white.opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 96)
+        }
+        .padding(12)
+        .background(Color.black.opacity(0.8))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    // MARK: - 线路面板
+
+    private var sourcePanel: some View {
+        VStack(spacing: 10) {
+            Text("播放线路")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.9))
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(sourceNames.indices, id: \.self) { i in
+                        Button {
+                            selectSource(i)
+                        } label: {
+                            Text(sourceNames[i])
+                                .font(.system(size: 12, weight: i == selectedSourceIndex ? .bold : .regular))
+                                .foregroundColor(i == selectedSourceIndex ? .black : .white)
+                                .lineLimit(1)
+                                .frame(maxWidth: 140)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(i == selectedSourceIndex ? Color.white : Color.white.opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 40)
+        }
+        .padding(12)
+        .background(Color.black.opacity(0.8))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: - 控制与状态
@@ -596,6 +734,30 @@ struct TencentStylePlayerOverlay: View {
             player.rate = r
         }
         showOSD("倍速 \(String(format: "%.2g", r))x")
+        showControls()
+    }
+
+    /// 选择剧集：关闭面板并通知父级切集。
+    private func selectEpisode(_ index: Int) {
+        guard index != selectedEpisodeIndex else {
+            showEpisodePanel = false
+            showControls()
+            return
+        }
+        showEpisodePanel = false
+        onSelectEpisode?(index)
+        showControls()
+    }
+
+    /// 选择线路：关闭面板并通知父级切源。
+    private func selectSource(_ index: Int) {
+        guard index != selectedSourceIndex else {
+            showSourcePanel = false
+            showControls()
+            return
+        }
+        showSourcePanel = false
+        onSelectSource?(index)
         showControls()
     }
 

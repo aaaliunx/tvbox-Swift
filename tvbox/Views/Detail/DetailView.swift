@@ -109,7 +109,19 @@ struct DetailView: View {
                     onPlayNext: playNextEpisodeIfNeeded,
                     systemController: sharedSystemController,
                     vlcController: sharedVLCController,
-                    onCloseRequested: closeMacFullScreenOverlay
+                    onCloseRequested: closeMacFullScreenOverlay,
+                    sourceNames: viewModel.flags,
+                    selectedSourceIndex: viewModel.flags.firstIndex(of: viewModel.selectedFlag) ?? 0,
+                    onSelectSource: { index in
+                        let flags = viewModel.flags
+                        guard index >= 0, index < flags.count else { return }
+                        viewModel.selectFlag(flags[index])
+                    },
+                    episodeNames: viewModel.currentEpisodes.map { $0.name },
+                    selectedEpisodeIndex: viewModel.selectedEpisodeIndex,
+                    onSelectEpisode: { index in
+                        viewModel.selectEpisode(index: index)
+                    }
                 )
                 .ignoresSafeArea()
                 .transition(.opacity)
@@ -147,6 +159,18 @@ struct DetailView: View {
                     onCloseRequested: {
                         isFullScreenDismissing = true
                         showFullScreen = false
+                    },
+                    sourceNames: viewModel.flags,
+                    selectedSourceIndex: viewModel.flags.firstIndex(of: viewModel.selectedFlag) ?? 0,
+                    onSelectSource: { index in
+                        let flags = viewModel.flags
+                        guard index >= 0, index < flags.count else { return }
+                        viewModel.selectFlag(flags[index])
+                    },
+                    episodeNames: viewModel.currentEpisodes.map { $0.name },
+                    selectedEpisodeIndex: viewModel.selectedEpisodeIndex,
+                    onSelectEpisode: { index in
+                        viewModel.selectEpisode(index: index)
                     }
                 )
             }
@@ -691,6 +715,14 @@ struct FullScreenPlayerView: View {
     var systemController: SystemPlayerSessionController? = nil
     var vlcController: VLCPlayerController? = nil
     var onCloseRequested: (() -> Void)? = nil
+    /// 播放源（线路）名称列表与当前选中下标。
+    var sourceNames: [String] = []
+    var selectedSourceIndex: Int = 0
+    var onSelectSource: ((Int) -> Void)? = nil
+    /// 剧集名称列表与当前选中下标。
+    var episodeNames: [String] = []
+    var selectedEpisodeIndex: Int = 0
+    var onSelectEpisode: ((Int) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     /// 左右横屏方向标记（用于旋转按钮切换 landscapeLeft/Right）。
     @State private var isLandscapeLeft = false
@@ -737,9 +769,24 @@ struct FullScreenPlayerView: View {
                             onRotate: { rotateFullScreen() },
                             onClose: { closeFullScreen() },
                             onLongPressBegan: { beginLongPressSpeed(player: player) },
-                            onLongPressEnded: { endLongPressSpeed(player: player) }
+                            onLongPressEnded: { endLongPressSpeed(player: player) },
+                            sourceNames: sourceNames,
+                            selectedSourceIndex: selectedSourceIndex,
+                            onSelectSource: { index in
+                                guard index >= 0, index < sourceNames.count else { return }
+                                onSelectSource?(index)
+                            },
+                            episodeNames: episodeNames,
+                            selectedEpisodeIndex: selectedEpisodeIndex,
+                            onSelectEpisode: { index in
+                                onSelectEpisode?(index)
+                            }
                         )
                         .ignoresSafeArea()
+                        .onChange(of: urlString) { _, newURL in
+                            // 切线路/切集后按新地址换流，不重建播放器。
+                            reloadSystemPlayer(with: newURL)
+                        }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -898,6 +945,25 @@ struct FullScreenPlayerView: View {
         } else {
             dismiss()
         }
+    }
+
+    /// 切线路/切集后按新地址换流（复用同一 AVPlayer，避免重新创建播放器）。
+    private func reloadSystemPlayer(with urlString: String) {
+        guard selectedEngine == .system,
+              let controller = systemController,
+              let player = controller.player,
+              !urlString.isEmpty,
+              controller.mediaURLString != urlString else { return }
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed)
+                ?? URL(string: trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "") else { return }
+        controller.mediaURLString = url.absoluteString
+        let asset = AVURLAsset(url: url)
+        let item = AVPlayerItem(asset: asset)
+        item.preferredForwardBufferDuration = 0
+        let savedRate = player.defaultRate
+        player.replaceCurrentItem(with: item)
+        player.playImmediately(atRate: savedRate)
     }
     // MARK: - 悬浮按钮显隐
 

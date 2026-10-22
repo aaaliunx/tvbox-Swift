@@ -148,7 +148,19 @@ struct LiveView: View {
                     title: viewModel.currentChannel?.channelName ?? "",
                     sharedController: livePlayerController,
                     systemPlayer: avPlayer,
-                    useSystemEngine: selectedEngine == .system
+                    useSystemEngine: selectedEngine == .system,
+                    sourceNum: viewModel.currentChannel?.sourceNum ?? 0,
+                    sourceIndex: viewModel.currentChannel?.sourceIndex ?? 0,
+                    onSelectSource: { index in
+                        guard let channel = viewModel.currentChannel,
+                              channel.sourceNum > 1 else { return }
+                        let target = min(max(index, 0), channel.sourceNum - 1)
+                        // 循环切到目标线路（viewModel.switchSource 为顺序切换）。
+                        for _ in 0..<channel.sourceNum {
+                            viewModel.switchSource()
+                            if viewModel.currentChannel?.sourceIndex == target { break }
+                        }
+                    }
                 )
             }
             #endif
@@ -843,6 +855,10 @@ struct LiveFullScreenPlayerView: View {
     var systemPlayer: AVPlayer? = nil
     /// 当前直播引擎（系统播放器 or VLC）。
     var useSystemEngine: Bool = false
+    /// 线路数量与当前线路下标（用于控制栏"线路"面板）。
+    var sourceNum: Int = 0
+    var sourceIndex: Int = 0
+    var onSelectSource: ((Int) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     /// 左右横屏方向标记（旋转按钮切换 landscapeLeft/Right）。
     @State private var isLandscapeLeft = false
@@ -873,7 +889,10 @@ struct LiveFullScreenPlayerView: View {
                             onRotate: { rotateLiveFullScreen() },
                             onClose: { dismiss() },
                             onLongPressBegan: { beginLiveLongPressSpeed() },
-                            onLongPressEnded: { endLiveLongPressSpeed() }
+                            onLongPressEnded: { endLiveLongPressSpeed() },
+                            sourceNames: (0..<max(sourceNum, 1)).map { "线路\($0 + 1)" },
+                            selectedSourceIndex: min(max(sourceIndex, 0), max(sourceNum - 1, 0)),
+                            onSelectSource: { index in onSelectSource?(index) }
                         )
                         .ignoresSafeArea()
                     }
