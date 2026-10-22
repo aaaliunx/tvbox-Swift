@@ -1,13 +1,31 @@
 import Foundation
 import SwiftUI
 
+/// 搜索结果条目：给每条结果一个稳定唯一 id（避免多源同剧 id 相同
+/// 导致列表滑动时行复用错乱、条目消失），并附带来源站点名。
+struct SearchResultItem: Identifiable, Equatable {
+    let id: UUID
+    let video: Movie.Video
+    let sourceName: String
+    
+    init(video: Movie.Video, sourceName: String) {
+        self.id = UUID()
+        self.video = video
+        self.sourceName = sourceName
+    }
+    
+    static func == (lhs: SearchResultItem, rhs: SearchResultItem) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
 /// 搜索 ViewModel
 @MainActor
 class SearchViewModel: ObservableObject {
     /// 搜索关键词输入。
     @Published var keyword: String = ""
     /// 当前结果列表。
-    @Published var results: [Movie.Video] = []
+    @Published var results: [SearchResultItem] = []
     /// 搜索加载状态，用于控制进度指示器。
     @Published var isSearching = false
     /// 本地搜索历史（最近在前）。
@@ -39,12 +57,12 @@ class SearchViewModel: ObservableObject {
         // 搜索一旦触发就先落历史，保持行为与移动端常见搜索体验一致。
         addToHistory(trimmed)
         
-        // 走多源流式并发搜索：每完成一个源立即显示该源结果。
-        await sourceService.searchAllStreaming(keyword: trimmed) { [weak self] batch in
+        // 走多源流式并发搜索：每完成一个源立即显示该源结果，并带上源站点名。
+        await sourceService.searchAllStreaming(keyword: trimmed) { [weak self] sourceName, batch in
             Task { @MainActor in
                 guard let self, requestId == self.latestSearchRequestId else { return }
                 // 直接追加，保留各源全部结果（与安卓版一致）；封面重复请求由磁盘缓存消除。
-                self.results.append(contentsOf: batch)
+                self.results.append(contentsOf: batch.map { SearchResultItem(video: $0, sourceName: sourceName) })
             }
         }
         guard requestId == latestSearchRequestId else { return }
@@ -69,7 +87,7 @@ class SearchViewModel: ObservableObject {
         do {
             let videos = try await sourceService.search(sourceBean: source, keyword: trimmed)
             guard requestId == latestSearchRequestId else { return }
-            self.results = videos
+            self.results = videos.map { SearchResultItem(video: $0, sourceName: source.name) }
         } catch {
             guard requestId == latestSearchRequestId else { return }
             errorMessage = error.localizedDescription

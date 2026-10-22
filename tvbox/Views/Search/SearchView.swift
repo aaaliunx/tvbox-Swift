@@ -123,9 +123,21 @@ struct SearchView: View {
     private var searchResults: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(viewModel.results) { video in
-                    NavigationLink(value: video) {
-                        VodCardView(video: video)
+                ForEach(viewModel.results) { item in
+                    NavigationLink(value: item.video) {
+                        ZStack(alignment: .topTrailing) {
+                            VodCardView(video: item.video)
+                            // 来源站点名徽标
+                            Text(item.sourceName)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color.black.opacity(0.55))
+                                .clipShape(Capsule())
+                                .padding(6)
+                        }
                     }
                     #if os(iOS)
                     .buttonStyle(VodCardPressStyle())

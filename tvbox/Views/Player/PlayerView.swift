@@ -440,9 +440,9 @@ struct TencentStylePlayerOverlay: View {
                                 }
                             } label: {
                                 Image(systemName: "lock.fill")
-                                    .font(.system(size: 15, weight: .medium))
+                                    .font(.system(size: 20, weight: .medium))
                                     .foregroundColor(.white)
-                                    .frame(width: 46, height: 46)
+                                    .frame(width: 60, height: 60)
                                     .background(Color.black.opacity(0.6))
                                     .clipShape(Circle())
                             }
@@ -730,9 +730,9 @@ struct TencentStylePlayerOverlay: View {
                             }
                         } label: {
                             Image(systemName: isLocked ? "lock.fill" : "lock.open")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.system(size: 18, weight: .medium))
                                 .foregroundColor(isLocked ? Color.orange : .white)
-                                .frame(width: 34, height: 34)
+                                .frame(width: 40, height: 40)
                         }
                         .buttonStyle(.plain)
 

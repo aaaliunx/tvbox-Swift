@@ -425,10 +425,11 @@ class SourceService {
     }
     
     /// 多源并发搜索（流式）：每个源完成即回调该源结果，界面边搜边显示。
-    func searchAllStreaming(keyword: String, onBatch: @escaping ([Movie.Video]) -> Void) async {
+    /// onBatch 回调参数：(源名称, 该源搜索结果)。
+    func searchAllStreaming(keyword: String, onBatch: @escaping (String, [Movie.Video]) -> Void) async {
         let sources = await ApiConfig.shared.getSearchableSources()
         
-        await withTaskGroup(of: [Movie.Video].self) { group in
+        await withTaskGroup(of: (SourceBean, [Movie.Video]).self) { group in
             for source in sources {
                 // 跳过不支持的源类型与失效屏蔽源
                 guard source.isSupportedInSwift && source.isHttpApi else { continue }
@@ -436,19 +437,20 @@ class SourceService {
                 group.addTask { [self] in
                     do {
                         // 每个源单独限时 8 秒，防止失效源（服务器挂起/无响应）拖住整个搜索。
-                        return try await withTimeout(seconds: 8) {
+                        let results = try await withTimeout(seconds: 8) {
                             try await self.search(sourceBean: source, keyword: keyword)
                         }
+                        return (source, results)
                     } catch {
-                        return []
+                        return (source, [])
                     }
                 }
             }
             
             // 每完成一个源立即回调，实现"搜出来就显示"。
-            for await results in group {
+            for await (source, results) in group {
                 if !results.isEmpty {
-                    onBatch(results)
+                    onBatch(source.name, results)
                 }
             }
         }
@@ -457,7 +459,7 @@ class SourceService {
     /// 多源并发搜索（聚合结果，全部完成后一次性返回）
     func searchAll(keyword: String) async -> [Movie.Video] {
         var aggregated: [Movie.Video] = []
-        await searchAllStreaming(keyword: keyword) { batch in
+        await searchAllStreaming(keyword: keyword) { _, batch in
             aggregated.append(contentsOf: batch)
         }
         return aggregated
