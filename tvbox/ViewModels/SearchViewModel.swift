@@ -49,7 +49,10 @@ class SearchViewModel: ObservableObject {
     /// 封面加载成功回调：把已加载成功的封面复用到同剧（同名同年）其它结果上，
     /// 这样即使某些站点的封面 URL 失效，搜索结果仍显示同剧封面而不是一直加载。
     func registerLoadedPoster(for item: SearchResultItem, url: URL) {
-        let key = "\(item.video.name)|\(item.video.year)"
+        // 匹配 key 只用剧名（去空格），忽略年份差异：
+        // 不同站点对同一部剧返回的年份常常不一致（空/2024/2025），
+        // 若带年份会导致同名结果互相匹配不上、封面无法复用。
+        let key = Self.posterKey(for: item.video.name)
         let urlString = url.absoluteString
         // 只记录首次成功，避免同剧多源反复覆盖。
         if loadedPosterByKey[key] == nil {
@@ -58,8 +61,8 @@ class SearchViewModel: ObservableObject {
         // 同剧其它结果若封面不同，替换为已加载成功的封面。
         var changed = false
         for index in results.indices {
-            let k = "\(results[index].video.name)|\(results[index].video.year)"
-            if k == key, results[index].video.pic != urlString {
+            if Self.posterKey(for: results[index].video.name) == key,
+               results[index].video.pic != urlString {
                 results[index].video.pic = urlString
                 changed = true
             }
@@ -67,6 +70,11 @@ class SearchViewModel: ObservableObject {
         if changed {
             objectWillChange.send()
         }
+    }
+
+    /// 封面复用匹配 key：仅用剧名，并做去空格归一化。
+    private static func posterKey(for name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     /// 执行搜索（流式：每个源完成立即追加显示，不等全部源搜完）。
@@ -91,7 +99,7 @@ class SearchViewModel: ObservableObject {
                 // 追加时若同剧已有成功加载的封面，直接复用，避免先渲染坏封面。
                 let items = batch.map { video -> SearchResultItem in
                     var v = video
-                    let key = "\(v.name)|\(v.year)"
+                    let key = Self.posterKey(for: v.name)
                     if let loaded = self.loadedPosterByKey[key], !loaded.isEmpty {
                         v.pic = loaded
                     }
