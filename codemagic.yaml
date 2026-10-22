@@ -7,13 +7,14 @@ workflows:
     environment:
       xcode: 16.0
     scripts:
-      - name: 生成 Xcode 工程
+      - name: 生成 Xcode 工程（带诊断）
         script: |
           which xcodegen || brew install xcodegen
+          xcodegen version || true
           xcodebuild -version
           xcodegen generate
           xcodebuild -list -project tvbox.xcodeproj
-      - name: 编译 Archive（不签名）
+      - name: 编译 Archive（不签名，失败时输出诊断）
         script: |
           set -e
           xcodebuild archive \
@@ -22,7 +23,14 @@ workflows:
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath build/tvbox.xcarchive \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO 2>&1 | tee build_archive.log
+          # 若 archive 失败，把错误摘录输出到日志
+          if ! tail -n 5 build_archive.log | grep -q "ARCHIVE SUCCEEDED"; then
+            echo "=== ARCHIVE FAILED, error excerpts ==="
+            grep -iE "error:|fatal:|failed|Unable|No such|not found" build_archive.log | head -40 || true
+            ls -la build_archive.log
+            exit 1
+          fi
       - name: 打包未签名 IPA（标准 Payload 结构）
         script: |
           set -e
@@ -38,3 +46,4 @@ workflows:
           unzip -l TVBox-unsigned.ipa | head -5
     artifacts:
       - TVBox-unsigned.ipa
+      - build_archive.log
