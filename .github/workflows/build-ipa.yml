@@ -13,7 +13,8 @@ permissions:
 
 jobs:
   build-ipa:
-    runs-on: macos-14
+    # macos-15 runner 池较新、高峰期排队通常更短；Xcode 自动选 16.x。
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
