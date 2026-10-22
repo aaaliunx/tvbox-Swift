@@ -24,7 +24,9 @@ enum DeviceOrientation {
 
         if #available(iOS 16.0, *) {
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
-                print("[Orientation] 更新失败: \(error.localizedDescription)")
+                print("[Orientation] requestGeometryUpdate 失败: \(error.localizedDescription)")
+                // requestGeometryUpdate 失败时兜底：直接设置设备方向。
+                fallbackSetDeviceOrientation(mask)
             }
         }
 
@@ -32,18 +34,35 @@ enum DeviceOrientation {
             .rootViewController?
             .setNeedsUpdateOfSupportedInterfaceOrientations()
 
-        // iOS 15 及以下兜底：直接设置设备方向，触发旋转。
+        // iOS 16+ 成功路径也补一次 attemptRotation，确保动画落地；
+        // iOS 15 及以下直接设置设备方向。
         if #unavailable(iOS 16.0) {
-            let rawValue: Int
-            switch mask {
-            case .portrait:
-                rawValue = UIInterfaceOrientation.portrait.rawValue
-            default:
+            fallbackSetDeviceOrientation(mask)
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                UIViewController.attemptRotationToDeviceOrientation()
+            }
+        }
+    }
+
+    /// 兜底：直接设置设备方向（iOS 16+ 同样生效，未签名 IPA 无审核约束）。
+    private static func fallbackSetDeviceOrientation(_ mask: UIInterfaceOrientationMask) {
+        let rawValue: Int
+        switch mask {
+        case .portrait, .portraitUpsideDown:
+            rawValue = UIInterfaceOrientation.portrait.rawValue
+        case .landscape:
+            // 跟随当前设备朝向选择左右横屏
+            if UIApplication.shared.statusBarOrientation == .landscapeLeft {
+                rawValue = UIInterfaceOrientation.landscapeLeft.rawValue
+            } else {
                 rawValue = UIInterfaceOrientation.landscapeRight.rawValue
             }
-            UIDevice.current.setValue(rawValue, forKey: "orientation")
-            UIViewController.attemptRotationToDeviceOrientation()
+        default:
+            rawValue = UIInterfaceOrientation.landscapeRight.rawValue
         }
+        UIDevice.current.setValue(rawValue, forKey: "orientation")
+        UIViewController.attemptRotationToDeviceOrientation()
     }
 }
 #endif

@@ -696,9 +696,12 @@ struct FullScreenPlayerView: View {
         }
         // 进入全屏强制横屏（即使系统"自动旋转"关闭也能横屏观看）；
         // 若用户开启自动旋转，之后转动手机画面实时跟随。
+        // 延迟到 cover 呈现动画完成后请求，避免动画期间方向请求被忽略。
         .onAppear {
             #if os(iOS)
-            DeviceOrientation.forceLandscape()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                DeviceOrientation.forceLandscape()
+            }
             #endif
         }
         .onDisappear {
