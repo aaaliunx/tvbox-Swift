@@ -145,6 +145,7 @@ struct LiveView: View {
             }) {
                 LiveFullScreenPlayerView(
                     urlString: viewModel.currentChannel?.currentUrl ?? "",
+                    title: viewModel.currentChannel?.channelName ?? "",
                     sharedController: livePlayerController,
                     systemPlayer: avPlayer,
                     useSystemEngine: selectedEngine == .system
@@ -834,6 +835,8 @@ struct LiveView: View {
 /// 直播全屏播放器（复用直播页共享播放器，避免双声音；支持系统/VLC 双引擎）。
 struct LiveFullScreenPlayerView: View {
     let urlString: String
+    /// 频道名（腾讯风格顶部标题栏显示）。
+    var title: String = ""
     /// 与直播页共用的 VLC 播放器实例。
     var sharedController: VLCPlayerController? = nil
     /// 系统播放器引擎时使用的 AVPlayer 实例（与直播页共用，不重新加载）。
@@ -849,24 +852,31 @@ struct LiveFullScreenPlayerView: View {
             Color.black.ignoresSafeArea()
 
             if useSystemEngine {
-                // 系统引擎：官方 AVPlayerViewController 内核 + 腾讯风格控制条
-                // 已集成在播放器内部（customOverlay）。
+                // 系统引擎：AVPlayerViewController 渲染画面（关闭系统控制条），
+                // 腾讯风格控制条覆盖在播放器内核之上（一体集成）。
                 if let systemPlayer {
-                    AVPlayerViewControllerRepresentable(
-                        player: systemPlayer,
-                        isPlaying: isLivePlaying,
-                        currentRate: liveFullScreenRate(systemPlayer),
-                        onPlayPause: { toggleLivePlayPause() },
-                        onRotate: { rotateLiveFullScreen() },
-                        onClose: { dismiss() },
-                        onLongPressBegan: { beginLiveLongPressSpeed() },
-                        onLongPressEnded: { endLiveLongPressSpeed() },
-                        onViewAppeared: {
-                            // 播放控制器真正呈现后强制横屏（比 SwiftUI onAppear 更可靠）。
-                            DeviceOrientation.forceLandscape()
-                        }
-                    )
-                    .ignoresSafeArea()
+                    ZStack {
+                        AVPlayerViewControllerRepresentable(
+                            player: systemPlayer,
+                            onViewAppeared: {
+                                // 播放控制器真正呈现后强制横屏（比 SwiftUI onAppear 更可靠）。
+                                DeviceOrientation.forceLandscape()
+                            }
+                        )
+                        .ignoresSafeArea()
+
+                        TencentStylePlayerOverlay(
+                            player: systemPlayer,
+                            title: title,
+                            isPlaying: isLivePlaying,
+                            onPlayPause: { toggleLivePlayPause() },
+                            onRotate: { rotateLiveFullScreen() },
+                            onClose: { dismiss() },
+                            onLongPressBegan: { beginLiveLongPressSpeed() },
+                            onLongPressEnded: { endLiveLongPressSpeed() }
+                        )
+                        .ignoresSafeArea()
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else if !urlString.isEmpty {
@@ -1010,12 +1020,6 @@ struct LiveFullScreenPlayerView: View {
         } else {
             DeviceOrientation.forceLandscapeRight()
         }
-    }
-
-    /// 当前直播倍速（暂停时 rate=0 回退到 defaultRate）。
-    private func liveFullScreenRate(_ player: AVPlayer) -> Float {
-        let r = player.rate
-        return r > 0 ? r : player.defaultRate
     }
 
     // MARK: - 悬浮按钮显隐

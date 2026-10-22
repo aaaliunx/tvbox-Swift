@@ -101,6 +101,7 @@ struct DetailView: View {
             if showFullScreen, let url = viewModel.playUrl {
                 FullScreenPlayerView(
                     urlString: url,
+                    title: video.name,
                     startPosition: viewModel.currentPlaybackSeconds(),
                     onProgressChanged: handlePlaybackProgress,
                     onPlaybackEnded: playNextEpisodeIfNeeded,
@@ -135,6 +136,7 @@ struct DetailView: View {
             if let url = viewModel.playUrl {
                 FullScreenPlayerView(
                     urlString: url,
+                    title: video.name,
                     startPosition: viewModel.currentPlaybackSeconds(),
                     onProgressChanged: handlePlaybackProgress,
                     onPlaybackEnded: playNextEpisodeIfNeeded,
@@ -679,6 +681,8 @@ struct DetailView: View {
 /// 全屏播放器
 struct FullScreenPlayerView: View {
     let urlString: String
+    /// 播放内容标题（腾讯风格顶部标题栏显示）。
+    var title: String = ""
     var startPosition: Double = 0
     var onProgressChanged: ((Double, Double?) -> Void)? = nil
     var onPlaybackEnded: (() -> Void)? = nil
@@ -712,25 +716,31 @@ struct FullScreenPlayerView: View {
 
             #if os(iOS)
             if selectedEngine == .system {
-                // 系统引擎：官方 AVPlayerViewController 内核，
-                // 腾讯风格控制条已集成在播放器内部（customOverlay），
-                // 不再有外部悬浮按钮/手势层。
+                // 系统引擎：AVPlayerViewController 渲染画面（关闭系统控制条），
+                // 腾讯风格控制条覆盖在播放器内核之上（一体集成）。
                 if let player = systemController?.player {
-                    AVPlayerViewControllerRepresentable(
-                        player: player,
-                        isPlaying: isFullScreenPlaying,
-                        currentRate: currentFullScreenRate,
-                        onPlayPause: { togglePlayPauseInFullScreen() },
-                        onRotate: { rotateFullScreen() },
-                        onClose: { closeFullScreen() },
-                        onLongPressBegan: { beginLongPressSpeed(player: player) },
-                        onLongPressEnded: { endLongPressSpeed(player: player) },
-                        onViewAppeared: {
-                            // 播放控制器真正呈现后强制横屏（比 SwiftUI onAppear 更可靠）。
-                            DeviceOrientation.forceLandscape()
-                        }
-                    )
-                    .ignoresSafeArea()
+                    ZStack {
+                        AVPlayerViewControllerRepresentable(
+                            player: player,
+                            onViewAppeared: {
+                                // 播放控制器真正呈现后强制横屏（比 SwiftUI onAppear 更可靠）。
+                                DeviceOrientation.forceLandscape()
+                            }
+                        )
+                        .ignoresSafeArea()
+
+                        TencentStylePlayerOverlay(
+                            player: player,
+                            title: title,
+                            isPlaying: isFullScreenPlaying,
+                            onPlayPause: { togglePlayPauseInFullScreen() },
+                            onRotate: { rotateFullScreen() },
+                            onClose: { closeFullScreen() },
+                            onLongPressBegan: { beginLongPressSpeed(player: player) },
+                            onLongPressEnded: { endLongPressSpeed(player: player) }
+                        )
+                        .ignoresSafeArea()
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     Color.black
@@ -889,14 +899,6 @@ struct FullScreenPlayerView: View {
             dismiss()
         }
     }
-
-    /// 当前播放倍速（传给内核控制条显示；暂停时 rate=0 回退到 defaultRate）。
-    private var currentFullScreenRate: Float {
-        guard let player = systemController?.player else { return 1.0 }
-        let r = player.rate
-        return r > 0 ? r : player.defaultRate
-    }
-
     // MARK: - 悬浮按钮显隐
 
     @State private var controlsVisible = true

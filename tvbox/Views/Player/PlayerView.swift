@@ -25,44 +25,17 @@ struct PlatformVideoPlayer: View {
 #if os(iOS)
 import AVKit
 
-/// 播放器 overlay 数据模型：承载回调与播放状态，供内嵌控制条（customOverlay）使用。
-@MainActor
-final class PlayerOverlayModel: ObservableObject {
-    weak var player: AVPlayer?
-    @Published var isPlaying = true
-    @Published var currentRate: Float = 1.0
-    var onPlayPause: (() -> Void)? = nil
-    var onRotate: (() -> Void)? = nil
-    var onClose: (() -> Void)? = nil
-    var onSeekBy: ((Double) -> Void)? = nil
-    var onBrightness: ((CGSize) -> Void)? = nil
-    var onVolume: ((CGSize) -> Void)? = nil
-    var onLongPressBegan: (() -> Void)? = nil
-    var onLongPressEnded: (() -> Void)? = nil
-}
-
-/// 官方 AVPlayerViewController 包装（全屏播放内核）+ 腾讯风格内嵌控制条：
-/// 关闭系统控制条，用 customOverlayViewController 承载自绘控制栏与手势层，
-/// 完全集成在播放器内核内部（不再有外部悬浮按钮）。
+/// 官方 AVPlayerViewController 画面容器（全屏播放内核）：
+/// 关闭系统控制条，画面由 AVPlayerViewController 渲染，
+/// 腾讯风格控制条以覆盖层形式叠放在内核之上（iOS 无 customOverlay API，
+/// 采用内核容器 + 一体覆盖控制条实现"控制条集成进播放器"）。
 struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     let player: AVPlayer?
-    var isPlaying: Bool = true
-    var currentRate: Float = 1.0
-    var onPlayPause: (() -> Void)? = nil
-    var onRotate: (() -> Void)? = nil
-    var onClose: (() -> Void)? = nil
-    var onSeekBy: ((Double) -> Void)? = nil
-    var onBrightness: ((CGSize) -> Void)? = nil
-    var onVolume: ((CGSize) -> Void)? = nil
-    var onLongPressBegan: (() -> Void)? = nil
-    var onLongPressEnded: (() -> Void)? = nil
     /// 播放控制器视图已加入窗口、转场基本完成后回调（用于方向强制落地）。
     var onViewAppeared: (() -> Void)? = nil
 
     final class Coordinator {
         var onViewAppeared: (() -> Void)?
-        let model = PlayerOverlayModel()
-        var hosting: UIHostingController<TencentStylePlayerOverlay>?
         init(onViewAppeared: (() -> Void)?) {
             self.onViewAppeared = onViewAppeared
         }
@@ -77,27 +50,6 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         vc.player = player
         vc.showsPlaybackControls = false
         vc.allowsPictureInPicturePlayback = false
-
-        // 腾讯风格控制条直接内嵌到播放器内核（customOverlayViewController，iOS 15+）。
-        let model = context.coordinator.model
-        model.player = player
-        model.isPlaying = isPlaying
-        model.currentRate = currentRate
-        model.onPlayPause = onPlayPause
-        model.onRotate = onRotate
-        model.onClose = onClose
-        model.onSeekBy = onSeekBy
-        model.onBrightness = onBrightness
-        model.onVolume = onVolume
-        model.onLongPressBegan = onLongPressBegan
-        model.onLongPressEnded = onLongPressEnded
-        if #available(iOS 15.0, *) {
-            let hosting = UIHostingController(rootView: TencentStylePlayerOverlay(model: model))
-            hosting.view.backgroundColor = .clear
-            vc.customOverlayViewController = hosting
-            context.coordinator.hosting = hosting
-        }
-
         // 转场动画（约 0.4s）完成后通知 SwiftUI 侧做方向兜底，
         // 比 SwiftUI onAppear 更可靠（此时控制器已真实呈现在窗口上）。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -110,18 +62,7 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         if uiViewController.player !== player {
             uiViewController.player = player
         }
-        let model = context.coordinator.model
-        model.player = player
-        model.isPlaying = isPlaying
-        model.currentRate = currentRate
-        model.onPlayPause = onPlayPause
-        model.onRotate = onRotate
-        model.onClose = onClose
-        model.onSeekBy = onSeekBy
-        model.onBrightness = onBrightness
-        model.onVolume = onVolume
-        model.onLongPressBegan = onLongPressBegan
-        model.onLongPressEnded = onLongPressEnded
+        uiViewController.showsPlaybackControls = false
         context.coordinator.onViewAppeared = onViewAppeared
     }
 }
@@ -286,15 +227,26 @@ final class SystemVolumeController {
     }
 }
 
-// MARK: - 腾讯风格全屏播放器控制条（集成在播放器内核内部）
+// MARK: - 腾讯风格全屏播放器控制条（集成在播放器内核之上）
 
-/// 内嵌到 AVPlayerViewController 的腾讯风格控制条：
+/// 覆盖在播放器内核上的腾讯视频风格控制条：
+/// - 顶部标题栏（返回 + 标题）
+/// - 底部控制栏：进度条行（时间 + 进度条 + 总时长）+ 按钮行
+///   （左：后退10s/播放暂停/快进10s；右：倍速菜单/旋转/退出）
 /// - 单击唤出/隐藏控制栏，双击播放/暂停
 /// - 左右滑动快进/快退，左侧上下滑亮度，右侧上下滑音量
 /// - 长按画面 2 倍速，松手恢复
-/// - 底部控制栏：进度条 + 时间 + 倍速 + 快退/播放/快进 + 旋转 + 退出
+/// - 倍速按钮弹出腾讯风格倍速菜单（1x/1.25x/1.5x/2x）
 struct TencentStylePlayerOverlay: View {
-    @ObservedObject var model: PlayerOverlayModel
+    let player: AVPlayer?
+    /// 播放内容标题（腾讯视频顶部标题栏同款）。
+    var title: String = ""
+    var isPlaying: Bool = true
+    var onPlayPause: (() -> Void)? = nil
+    var onRotate: (() -> Void)? = nil
+    var onClose: (() -> Void)? = nil
+    var onLongPressBegan: (() -> Void)? = nil
+    var onLongPressEnded: (() -> Void)? = nil
 
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -303,6 +255,7 @@ struct TencentStylePlayerOverlay: View {
     @State private var isDraggingProgress = false
     @State private var draggingSeconds: Double = 0
     @State private var rate: Float = 1.0
+    @State private var showRateMenu = false
     @State private var osdText: String?
     @State private var osdOpacity: Double = 0
     @State private var osdTimer: Timer?
@@ -342,14 +295,14 @@ struct TencentStylePlayerOverlay: View {
                         seekBy(offset)
                     },
                     onTap: { showControls() },
-                    onDoubleTap: { model.onPlayPause?() },
-                    onLongPressBegan: { model.onLongPressBegan?() },
-                    onLongPressEnded: { model.onLongPressEnded?() },
+                    onDoubleTap: { onPlayPause?() },
+                    onLongPressBegan: { onLongPressBegan?() },
+                    onLongPressEnded: { onLongPressEnded?() },
                     onDragEnded: {
                         brightnessGestureStart = nil
                         volumeGestureStart = nil
                         seekStartTime = nil
-                        model.onLongPressEnded?()
+                        onLongPressEnded?()
                     }
                 )
             }
@@ -367,20 +320,59 @@ struct TencentStylePlayerOverlay: View {
                     .allowsHitTesting(false)
             }
 
-            // 底部控制栏（腾讯风格）
+            // 顶部标题栏（腾讯视频同款）：返回 + 标题
+            VStack {
+                HStack(spacing: 8) {
+                    Button {
+                        onClose?()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 36, height: 36)
+                    }
+                    .buttonStyle(.plain)
+
+                    Text(title)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 10)
+                .background(
+                    LinearGradient(
+                        colors: [.black.opacity(0.55), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                Spacer()
+                    .contentShape(Rectangle())
+                    .onTapGesture { hideControlsNow() }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .opacity(controlsVisible ? 1 : 0)
+            .animation(.easeInOut(duration: 0.25), value: controlsVisible)
+            .allowsHitTesting(controlsVisible)
+
+            // 底部控制栏（腾讯视频同款）
             VStack {
                 Spacer()
+                    .contentShape(Rectangle())
+                    .onTapGesture { hideControlsNow() }
                 controlsBar
                     .opacity(controlsVisible ? 1 : 0)
                     .animation(.easeInOut(duration: 0.25), value: controlsVisible)
-                    .padding(.bottom, 8)
-                    .padding(.horizontal, 16)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(controlsVisible)
         }
         .onAppear {
-            rate = model.currentRate
             showControls()
             startProgressTimer()
         }
@@ -391,16 +383,49 @@ struct TencentStylePlayerOverlay: View {
         }
     }
 
-    // MARK: - 底部控制栏
+    /// 立即隐藏控制条（腾讯逻辑：控制条显示期点画面空白处隐藏）。
+    private func hideControlsNow() {
+        hideControlsTask?.cancel()
+        withAnimation(.easeOut(duration: 0.3)) {
+            controlsVisible = false
+        }
+    }
+
+    // MARK: - 底部控制栏（腾讯布局）
 
     private var controlsBar: some View {
-        VStack(spacing: 6) {
-            // 进度条行
+        VStack(spacing: 10) {
+            // 倍速菜单（腾讯风格：点击倍速后向上弹出选项）
+            if showRateMenu {
+                HStack(spacing: 8) {
+                    ForEach(Self.playbackRates, id: \.self) { r in
+                        Button {
+                            setRate(r)
+                        } label: {
+                            Text(r == rate ? "\(String(format: "%.2g", r))x" : String(format: "%.2g", r) + "x")
+                                .font(.system(size: 12, weight: r == rate ? .bold : .regular))
+                                .foregroundColor(r == rate ? .black : .white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(r == rate ? Color.white : Color.white.opacity(0.2))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.55))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
+            // 进度条行：当前时间 / 进度条 / 总时长
             HStack(spacing: 10) {
-                Text(currentTime.durationString)
+                Text("\(formatTime(currentTime))/\(formatTime(duration))")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundColor(.white.opacity(0.85))
-                    .frame(minWidth: 34, alignment: .leading)
+                    .frame(minWidth: 74, alignment: .leading)
 
                 Slider(
                     value: Binding(
@@ -418,101 +443,98 @@ struct TencentStylePlayerOverlay: View {
                 )
                 .accentColor(.white)
                 .disabled(duration <= 0)
-
-                Text(duration.durationString)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.55))
-                    .frame(minWidth: 34, alignment: .trailing)
             }
 
-            // 按钮行：倍速 | 后退10s | 播放/暂停 | 前进10s | 旋转 | 退出
-            HStack(spacing: 24) {
+            // 按钮行：左播放控制 / 右功能按钮（腾讯风格）
+            HStack(spacing: 20) {
+                HStack(spacing: 20) {
+                    Button {
+                        showControls()
+                        seekBy(-10)
+                        showOSD("后退 10s")
+                    } label: {
+                        Image(systemName: "gobackward.10")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        showControls()
+                        onPlayPause?()
+                    } label: {
+                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 26, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 36, height: 36)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        showControls()
+                        seekBy(10)
+                        showOSD("快进 10s")
+                    } label: {
+                        Image(systemName: "goforward.10")
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer()
+
+                // 功能按钮：倍速 / 旋转 / 退出（腾讯视频底部右侧一排）
                 Button {
                     showControls()
-                    cyclePlaybackRate()
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        showRateMenu.toggle()
+                    }
                 } label: {
-                    Text(String(format: "%.1fx", rate))
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    Text("倍速")
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color.white.opacity(0.15))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(showRateMenu ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
 
-                Spacer()
-
                 Button {
                     showControls()
-                    seekBy(-10)
-                    showOSD("后退 \(10)s")
-                } label: {
-                    Image(systemName: "gobackward.10")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    showControls()
-                    model.onPlayPause?()
-                } label: {
-                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 40, height: 40)
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    showControls()
-                    seekBy(10)
-                    showOSD("快进 \(10)s")
-                } label: {
-                    Image(systemName: "goforward.10")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Button {
-                    showControls()
-                    model.onRotate?()
+                    onRotate?()
                 } label: {
                     Image(systemName: "rectangle.landscape.rotate")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white.opacity(0.9))
-                        .frame(width: 36, height: 36)
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 34, height: 34)
                 }
                 .buttonStyle(.plain)
 
                 Button {
-                    model.onClose?()
+                    onClose?()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 19))
-                        .foregroundColor(.white.opacity(0.9))
-                        .frame(width: 36, height: 36)
+                        .font(.system(size: 21))
+                        .foregroundColor(.white)
+                        .frame(width: 34, height: 34)
                 }
                 .buttonStyle(.plain)
             }
         }
         .foregroundColor(.white)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(
             LinearGradient(
-                colors: [.clear, .black.opacity(0.7)],
+                colors: [.clear, .black.opacity(0.72)],
                 startPoint: .top,
                 endPoint: .bottom
             )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 12))
         .environment(\.colorScheme, .dark)
     }
 
@@ -522,7 +544,7 @@ struct TencentStylePlayerOverlay: View {
         progressTimer?.invalidate()
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
             Task { @MainActor in
-                guard let player = model.player else { return }
+                guard let player = player else { return }
                 let cur = player.currentTime().seconds
                 if cur.isFinite, cur >= 0 {
                     currentTime = cur
@@ -538,7 +560,7 @@ struct TencentStylePlayerOverlay: View {
     }
 
     private func seek(to seconds: Double) {
-        guard let player = model.player else { return }
+        guard let player else { return }
         let wasPlaying = player.rate != 0
         player.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600)) { _ in
             if wasPlaying {
@@ -548,7 +570,7 @@ struct TencentStylePlayerOverlay: View {
     }
 
     private func seekBy(_ offset: Double) {
-        guard let player = model.player else { return }
+        guard let player else { return }
         if seekStartTime == nil {
             seekStartTime = player.currentTime().seconds
         }
@@ -565,15 +587,16 @@ struct TencentStylePlayerOverlay: View {
         showOSD(formatTime(target))
     }
 
-    private func cyclePlaybackRate() {
-        guard let player = model.player else { return }
-        let next = Self.playbackRates.first(where: { $0 > rate + 0.01 }) ?? Self.playbackRates[0]
-        rate = next
-        player.defaultRate = next
+    private func setRate(_ r: Float) {
+        guard let player else { return }
+        rate = r
+        showRateMenu = false
+        player.defaultRate = r
         if player.rate > 0 {
-            player.rate = next
+            player.rate = r
         }
-        showOSD("倍速 \(String(format: "%.2g", next))x")
+        showOSD("倍速 \(String(format: "%.2g", r))x")
+        showControls()
     }
 
     private func showControls() {
