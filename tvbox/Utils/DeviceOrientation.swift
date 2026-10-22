@@ -9,6 +9,14 @@ enum DeviceOrientation {
         apply(.landscape)
     }
 
+    static func forceLandscapeLeft() {
+        apply(.landscapeLeft)
+    }
+
+    static func forceLandscapeRight() {
+        apply(.landscapeRight)
+    }
+
     static func forcePortrait() {
         apply(.portrait)
     }
@@ -22,44 +30,43 @@ enum DeviceOrientation {
             .first
         guard let scene else { return }
 
+        // 1. iOS 16+ 系统几何更新（Info.plist 已声明全部方向，锁定方向时同样生效）。
         if #available(iOS 16.0, *) {
             scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { error in
                 print("[Orientation] requestGeometryUpdate 失败: \(error.localizedDescription)")
-                // requestGeometryUpdate 失败时兜底：直接设置设备方向。
-                fallbackSetDeviceOrientation(mask)
             }
+            scene.windows.first(where: { $0.isKeyWindow })?
+                .rootViewController?
+                .setNeedsUpdateOfSupportedInterfaceOrientations()
         }
 
-        scene.windows.first(where: { $0.isKeyWindow })?
-            .rootViewController?
-            .setNeedsUpdateOfSupportedInterfaceOrientations()
+        // 2. 双保险：直接设置设备方向（iOS 16+ 多数系统同样生效，未签名 IPA 无审核约束）。
+        //    与 requestGeometryUpdate 目标一致，不会互相冲突。
+        fallbackSetDeviceOrientation(mask)
 
-        // iOS 16+ 成功路径也补一次 attemptRotation，确保动画落地；
-        // iOS 15 及以下直接设置设备方向。
-        if #unavailable(iOS 16.0) {
-            fallbackSetDeviceOrientation(mask)
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                UIViewController.attemptRotationToDeviceOrientation()
-            }
+        // 3. 延迟补一次旋转落地。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            UIViewController.attemptRotationToDeviceOrientation()
         }
     }
 
-    /// 兜底：直接设置设备方向（iOS 16+ 同样生效，未签名 IPA 无审核约束）。
+    /// 兜底：直接设置设备方向。
     private static func fallbackSetDeviceOrientation(_ mask: UIInterfaceOrientationMask) {
         let rawValue: Int
         switch mask {
         case .portrait, .portraitUpsideDown:
             rawValue = UIInterfaceOrientation.portrait.rawValue
-        case .landscape:
-            // 跟随当前设备朝向选择左右横屏
-            if UIApplication.shared.statusBarOrientation == .landscapeLeft {
+        case .landscapeLeft:
+            rawValue = UIInterfaceOrientation.landscapeLeft.rawValue
+        case .landscapeRight:
+            rawValue = UIInterfaceOrientation.landscapeRight.rawValue
+        default:
+            // landscape：跟随当前设备朝向选择左右横屏
+            if UIDevice.current.orientation == .landscapeLeft {
                 rawValue = UIInterfaceOrientation.landscapeLeft.rawValue
             } else {
                 rawValue = UIInterfaceOrientation.landscapeRight.rawValue
             }
-        default:
-            rawValue = UIInterfaceOrientation.landscapeRight.rawValue
         }
         UIDevice.current.setValue(rawValue, forKey: "orientation")
         UIViewController.attemptRotationToDeviceOrientation()

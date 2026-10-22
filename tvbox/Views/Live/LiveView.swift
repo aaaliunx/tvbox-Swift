@@ -841,76 +841,71 @@ struct LiveFullScreenPlayerView: View {
     /// 当前直播引擎（系统播放器 or VLC）。
     var useSystemEngine: Bool = false
     @Environment(\.dismiss) private var dismiss
-    /// 全屏内容旋转角度：90=横屏左，-90=横屏右（与系统方向锁定无关）。
-    @State private var landscapeRotation: Double = 90
+    /// 左右横屏方向标记（旋转按钮切换 landscapeLeft/Right）。
+    @State private var isLandscapeLeft = false
 
     var body: some View {
-        GeometryReader { geo in
-            let screenW = geo.size.width
-            let screenH = geo.size.height
-            ZStack {
-                Color.black
+        ZStack {
+            Color.black.ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    if useSystemEngine {
-                        if let systemPlayer {
-                            PlatformVideoPlayer(player: systemPlayer)
-                                .ignoresSafeArea()
+            VStack(spacing: 0) {
+                if useSystemEngine {
+                    if let systemPlayer {
+                        PlatformVideoPlayer(player: systemPlayer)
+                            .ignoresSafeArea()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                } else if !urlString.isEmpty {
+                    VLCLivePlayerView(
+                        urlString: urlString,
+                        sharedController: sharedController,
+                        onToggleFullScreen: { dismiss() },
+                        controlsBottomInset: 20,
+                        autoStart: false
+                    )
+                    .ignoresSafeArea()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topTrailing) {
+                HStack(spacing: 16) {
+                    // 左右翻转横屏（系统方向请求 + 设备方向兜底）
+                    Button {
+                        isLandscapeLeft.toggle()
+                        if isLandscapeLeft {
+                            DeviceOrientation.forceLandscapeLeft()
+                        } else {
+                            DeviceOrientation.forceLandscapeRight()
                         }
-                    } else if !urlString.isEmpty {
-                        VLCLivePlayerView(
-                            urlString: urlString,
-                            sharedController: sharedController,
-                            onToggleFullScreen: { dismiss() },
-                            controlsBottomInset: 20,
-                            autoStart: false
-                        )
-                        .ignoresSafeArea()
+                    } label: {
+                        Image(systemName: "rectangle.landscape.rotate")
+                            .font(.title3)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    // 退出全屏
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.white.opacity(0.8))
                     }
                 }
-                // 关键：先铺满全屏再整体旋转，避免旋转后只有播放器固有尺寸。
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .rotationEffect(.degrees(landscapeRotation))
-                .frame(
-                    width: landscapeRotation != 0 ? screenH : screenW,
-                    height: landscapeRotation != 0 ? screenW : screenH
-                )
-                .overlay(alignment: .topTrailing) {
-                    HStack(spacing: 16) {
-                        // 左右翻转横屏
-                        Button {
-                            landscapeRotation = (landscapeRotation == 90 ? -90 : 90)
-                        } label: {
-                            Image(systemName: "rectangle.landscape.rotate")
-                                .font(.title3)
-                                .foregroundColor(.white.opacity(0.8))
-                        }
-                        // 退出全屏
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(.white.opacity(0.8))
-                        }
-                    }
-                    .padding()
-                }
+                .padding()
             }
         }
         .ignoresSafeArea()
         .statusBarHidden(true)
-        // 自动旋转开启时跟随设备方向：横屏左/右切换内容旋转角；
-        // 锁定方向时设备方向不变化，由右上角翻转按钮手动控制。
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            switch UIDevice.current.orientation {
-            case .landscapeLeft:
-                landscapeRotation = -90
-            case .landscapeRight:
-                landscapeRotation = 90
-            default:
-                break
+        // 全屏即横屏：系统几何更新 + 设备方向双保险。
+        // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制横屏。
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                DeviceOrientation.forceLandscape()
             }
+        }
+        .onDisappear {
+            DeviceOrientation.forcePortrait()
         }
     }
 }

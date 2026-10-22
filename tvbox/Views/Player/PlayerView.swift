@@ -16,6 +16,8 @@ struct PlatformVideoPlayer: View {
         MacOSPlayerView(player: player)
         #else
         VideoPlayer(player: player)
+            // VideoPlayer 默认保持视频固有比例尺寸，不铺满时旋转/全屏会只占部分画面。
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         #endif
     }
 }
