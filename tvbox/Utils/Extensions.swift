@@ -30,6 +30,8 @@ struct HawkConfig {
     static let SEARCH_HISTORY = "search_history"
     /// M3U8 播放地址净化开关。
     static let M3U8_CLEAN = "m3u8_clean"
+    /// 直播播放失败时自动切换线路开关（默认关闭）。
+    static let LIVE_AUTO_SWITCH_LINE = "live_auto_switch_line"
 }
 
 /// 通用 Swift 扩展

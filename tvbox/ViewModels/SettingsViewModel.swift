@@ -56,6 +56,8 @@ class SettingsViewModel: ObservableObject {
     @Published var historyLimit: Int = 20
     /// M3U8 地址净化开关。
     @Published var m3u8Clean: Bool = false
+    /// 直播播放失败时自动切换线路开关（默认关闭，防止正常直播突然换源）。
+    @Published var liveAutoSwitchLine: Bool = false
     /// 视频画面渲染缩放。
     @Published var playScale: PlayScaleOption = .original
     /// 缓存占用展示文本。
@@ -134,6 +136,7 @@ class SettingsViewModel: ObservableObject {
         let savedHistoryLimit = defaults.integer(forKey: HawkConfig.HISTORY_NUM)
         historyLimit = savedHistoryLimit > 0 ? savedHistoryLimit : 20
         m3u8Clean = defaults.bool(forKey: HawkConfig.M3U8_CLEAN)
+        liveAutoSwitchLine = defaults.bool(forKey: HawkConfig.LIVE_AUTO_SWITCH_LINE)
         if let rawScale = defaults.string(forKey: HawkConfig.PLAY_SCALE),
            let option = PlayScaleOption(rawValue: rawScale) {
             playScale = option
@@ -218,6 +221,7 @@ class SettingsViewModel: ObservableObject {
         let savedHistoryLimit = defaults.integer(forKey: HawkConfig.HISTORY_NUM)
         historyLimit = savedHistoryLimit > 0 ? savedHistoryLimit : 20
         m3u8Clean = defaults.bool(forKey: HawkConfig.M3U8_CLEAN)
+        liveAutoSwitchLine = defaults.bool(forKey: HawkConfig.LIVE_AUTO_SWITCH_LINE)
         if let rawScale = defaults.string(forKey: HawkConfig.PLAY_SCALE),
            let option = PlayScaleOption(rawValue: rawScale) {
             playScale = option

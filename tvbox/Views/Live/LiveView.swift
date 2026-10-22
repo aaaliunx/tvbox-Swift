@@ -925,6 +925,14 @@ struct LiveView: View {
             return
         }
         
+        // 直播自动换线开关（默认关闭）：关闭时播放失败只提示，不自动切换线路，
+        // 避免正常直播因网络抖动/卡顿突然自动换源。
+        let autoSwitch = UserDefaults.standard.bool(forKey: HawkConfig.LIVE_AUTO_SWITCH_LINE)
+        if !autoSwitch {
+            playbackFailureText = "直播源无法播放，请检查线路或手动切换"
+            return
+        }
+        
         if trackedChannelId != channel.id {
             resetFailureTracking(for: channel)
         }

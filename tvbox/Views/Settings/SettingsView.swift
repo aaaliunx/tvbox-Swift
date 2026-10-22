@@ -142,6 +142,12 @@ struct SettingsView: View {
                             }
                         }
                         Divider().background(Color.white.opacity(0.1))
+                        // 直播自动换线：关闭后播放失败只提示，不再自动切换线路（避免正常直播突然换源）。
+                        SettingsRow(icon: "arrow.triangle.2.circlepath", title: "直播自动换线", value: viewModel.liveAutoSwitchLine ? "开启" : "关闭") {
+                            viewModel.liveAutoSwitchLine.toggle()
+                            UserDefaults.standard.set(viewModel.liveAutoSwitchLine, forKey: HawkConfig.LIVE_AUTO_SWITCH_LINE)
+                        }
+                        Divider().background(Color.white.opacity(0.1))
                         SettingsRow(icon: "cpu", title: "视频解码", value: viewModel.decodeMode.title) {
                             showingPicker = .decode
                         }

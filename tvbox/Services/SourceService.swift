@@ -429,15 +429,22 @@ class SourceService {
     func searchAllStreaming(keyword: String, onBatch: @escaping (String, [Movie.Video]) -> Void) async {
         let sources = await ApiConfig.shared.getSearchableSources()
         
+        // 并发闸门：最多同时搜 6 个源。源太多全部并发会挤爆移动网络带宽，
+        // 导致所有源一起变慢、几乎同时返回，界面表现成"等很久后一起出来"。
+        // 限制并发后，快的源 1-2 秒返回并逐个显示。
+        let gate = SearchGate(limit: 6)
+        
         await withTaskGroup(of: (SourceBean, [Movie.Video]).self) { group in
             for source in sources {
                 // 跳过不支持的源类型与失效屏蔽源
                 guard source.isSupportedInSwift && source.isHttpApi else { continue }
                 
                 group.addTask { [self] in
+                    await gate.acquire()
+                    defer { gate.release() }
                     do {
-                        // 每个源单独限时 8 秒，防止失效源（服务器挂起/无响应）拖住整个搜索。
-                        let results = try await withTimeout(seconds: 8) {
+                        // 每个源单独限时 5 秒，防止失效源（服务器挂起/无响应）拖住整个搜索。
+                        let results = try await withTimeout(seconds: 5) {
                             try await self.search(sourceBean: source, keyword: keyword)
                         }
                         return (source, results)
@@ -680,6 +687,37 @@ enum SourceError: LocalizedError {
         case .parseError(let msg): return "数据解析错误: \(msg)"
         case .unsupportedType(let type): return "暂不支持 \(type) 类型的数据源，请切换其他源"
         case .invalidApiUrl(let url): return "无效的接口地址: \(url)"
+        }
+    }
+}
+
+/// 搜索并发闸门：限制同时进行的源搜索数量。
+/// 移动网络带宽有限，若全部源同时并发请求会互相挤兑、一起变慢，
+/// 限制并发后快源先返回、结果逐个显示。
+actor SearchGate {
+    private let limit: Int
+    private var active = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    
+    init(limit: Int) {
+        self.limit = limit
+    }
+    
+    /// 获取一个并发席位，达到上限时挂起等待。
+    func acquire() async {
+        if active < limit {
+            active += 1
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    
+    /// 释放一个并发席位，唤醒最早等待者。
+    func release() {
+        if waiters.isEmpty {
+            active -= 1
+        } else {
+            waiters.removeFirst().resume()
         }
     }
 }
