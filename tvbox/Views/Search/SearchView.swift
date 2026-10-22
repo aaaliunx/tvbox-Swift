@@ -178,8 +178,18 @@ struct SearchView: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
-        // 滚动列表时立即收起键盘（腾讯视频式交互）。
+        // 手指在结果区一拖动/滚动立即收起键盘（腾讯视频式交互）。
+        // 注：结果较少时内容不满一屏，scrollDismissesKeyboard 不会触发，
+        // 因此用拖拽手势兜底，任何拖动都立即收起键盘。
         .scrollDismissesKeyboard(.immediately)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { _ in
+                    if searchFocused {
+                        searchFocused = false
+                    }
+                }
+        )
         .navigationDestination(for: Movie.Video.self) { video in
             DetailView(video: video)
         }
