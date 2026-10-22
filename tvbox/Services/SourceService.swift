@@ -74,6 +74,35 @@ class SourceService {
             }
         }
         
+        // 分类补全：分类从推荐列表聚合而来（每页仅覆盖部分分类），
+        // 追加拉取 2 页推荐列表合并真实分类，让分类栏更完整且全部可点开。
+        if !sorts.isEmpty, sourceBean.type == 1 || sourceBean.type == 0 {
+            for pg in 2...3 {
+                let pageURL: String
+                if sourceBean.type == 1 {
+                    pageURL = try buildURL(
+                        base: api,
+                        queryItems: [
+                            URLQueryItem(name: "ac", value: "class"),
+                            URLQueryItem(name: "pg", value: String(pg))
+                        ]
+                    )
+                } else {
+                    pageURL = try buildURL(
+                        base: api,
+                        queryItems: [URLQueryItem(name: "pg", value: String(pg))]
+                    )
+                }
+                if let extraStr = try? await network.getString(from: pageURL) {
+                    let extra = (try? parseSort(extraStr, sourceBean: sourceBean)) ?? (sorts: [], homeVideos: [])
+                    if !extra.sorts.isEmpty {
+                        let existingIDs = Set(sorts.map { $0.id })
+                        sorts.append(contentsOf: extra.sorts.filter { !existingIDs.contains($0.id) })
+                    }
+                }
+            }
+        }
+        
         // 当大多数推荐视频的 vod_pic 为空时（ac=class 接口常见情况），
         // 额外请求列表接口获取带完整海报的推荐视频
         let picMissingCount = homeVideos.filter { $0.pic.trimmingCharacters(in: .whitespaces).isEmpty }.count
@@ -150,25 +179,12 @@ class SourceService {
     }
     
     /// 从 JSON 响应解析分类与推荐视频：
-    /// 1) 优先解析 class 字段；2) 无 class 时从推荐列表聚合真实分类（type_id/type_name 去重），
-    /// 保证每个分类点开都有数据。
+    /// 1) 优先从推荐列表聚合真实分类（type_id/type_name 去重）——保证每个分类点开都有数据
+    /// （部分源 class 分类为模板残留，如"电影片=1"在源站已无数据，聚合可跳过空分类）；
+    /// 2) 仅当列表为空（无法聚合）时回退 class 字段。
     private func parseJSONCategoriesAndVideos(_ json: [String: Any], sourceKey: String) -> (sorts: [MovieSort.SortData], homeVideos: [Movie.Video]) {
         var sorts: [MovieSort.SortData] = []
         var homeVideos: [Movie.Video] = []
-        
-        // 解析分类
-        if let classList = json["class"] as? [[String: Any]] {
-            for cls in classList {
-                let id: String
-                if let intId = cls["type_id"] as? Int {
-                    id = String(intId)
-                } else {
-                    id = cls["type_id"] as? String ?? ""
-                }
-                let name = cls["type_name"] as? String ?? ""
-                sorts.append(MovieSort.SortData(id: id, name: name))
-            }
-        }
         
         // 解析首页推荐视频
         if let list = json["list"] as? [[String: Any]] {
@@ -180,24 +196,38 @@ class SourceService {
                     homeVideos.append(video)
                 }
             }
+            
+            // 聚合真实分类（优先）：从推荐列表聚合 type_id/type_name 去重，
+            // 保证每个分类点开都有数据。
+            if !list.isEmpty {
+                var seenIDs = Set<String>()
+                var seenNames = Set<String>()
+                for item in list {
+                    let id: String
+                    if let intId = item["type_id"] as? Int {
+                        id = String(intId)
+                    } else {
+                        id = item["type_id"] as? String ?? ""
+                    }
+                    let name = item["type_name"] as? String ?? ""
+                    guard !id.isEmpty, !name.isEmpty,
+                          seenIDs.insert(id).inserted,
+                          seenNames.insert(name).inserted else { continue }
+                    sorts.append(MovieSort.SortData(id: id, name: name))
+                }
+            }
         }
         
-        // 接口不提供 class（如部分苹果CMS 源不支持 ac=class，直接返回视频列表）时，
-        // 从推荐列表聚合出真实分类（type_id/type_name 去重），保证每个分类点开都有数据。
-        if sorts.isEmpty, let list = json["list"] as? [[String: Any]] {
-            var seenIDs = Set<String>()
-            var seenNames = Set<String>()
-            for item in list {
+        // 仅当无法从列表聚合时，回退 class 字段分类
+        if sorts.isEmpty, let classList = json["class"] as? [[String: Any]] {
+            for cls in classList {
                 let id: String
-                if let intId = item["type_id"] as? Int {
+                if let intId = cls["type_id"] as? Int {
                     id = String(intId)
                 } else {
-                    id = item["type_id"] as? String ?? ""
+                    id = cls["type_id"] as? String ?? ""
                 }
-                let name = item["type_name"] as? String ?? ""
-                guard !id.isEmpty, !name.isEmpty,
-                      seenIDs.insert(id).inserted,
-                      seenNames.insert(name).inserted else { continue }
+                let name = cls["type_name"] as? String ?? ""
                 sorts.append(MovieSort.SortData(id: id, name: name))
             }
         }
