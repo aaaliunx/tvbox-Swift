@@ -119,14 +119,15 @@ extension Double {
 // MARK: - Design System (Merged from DesignSystem.swift)
 
 struct AppTheme {
+    // 腾讯视频式深黑背景（近纯黑，轻微暖黑渐变）
     static let primaryGradient = LinearGradient(
         colors: [
-            Color(hex: "1a1a2e"),
-            Color(hex: "16213e"),
-            Color(hex: "0f3460")
+            Color(hex: "141414"),
+            Color(hex: "181818"),
+            Color(hex: "101010")
         ],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
+        startPoint: .top,
+        endPoint: .bottom
     )
     
     static let accentGradient = LinearGradient(
@@ -136,8 +137,16 @@ struct AppTheme {
     )
     
     static let glassBackgroud = Color.white.opacity(0.1)
-    static let cardRadius: CGFloat = 16
-    static let glassRadius: CGFloat = 20
+    // 腾讯视频卡片圆角偏小
+    static let cardRadius: CGFloat = 10
+    static let glassRadius: CGFloat = 16
+}
+
+// MARK: - 通知（跨页面切换等）
+
+extension Notification.Name {
+    /// 切到底部"搜索"Tab（首页搜索入口按钮触发）。
+    static let switchToSearchTab = Notification.Name("switchToSearchTab")
 }
 
 extension Color {

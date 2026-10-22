@@ -109,6 +109,10 @@ struct ContentView: View {
         .onChange(of: selectedTab) { _, _ in
             HapticManager.shared.selection()
         }
+        // 首页搜索入口：收到通知切到"搜索"Tab。
+        .onReceive(NotificationCenter.default.publisher(for: .switchToSearchTab)) { _ in
+            selectedTab = 2
+        }
         #else
         NavigationSplitView(columnVisibility: $appState.splitViewVisibility) {
             List(selection: $selectedTab) {

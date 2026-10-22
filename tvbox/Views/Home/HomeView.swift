@@ -80,6 +80,19 @@ struct HomeView: View {
             .fixedSize()
             
             Spacer()
+            
+            // 搜索入口（腾讯视频式：右上角放大镜直达搜索页）
+            Button {
+                NotificationCenter.default.post(name: .switchToSearchTab, object: nil)
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(width: 34, height: 34)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
@@ -104,9 +117,9 @@ struct HomeView: View {
                                 VStack(spacing: 6) {
                                     Text(sort.name)
                                         .font(.system(size: 14, weight: viewModel.selectedSort?.id == sort.id ? .bold : .regular))
-                                        .foregroundColor(viewModel.selectedSort?.id == sort.id ? .white : .white.opacity(0.6))
+                                        .foregroundColor(viewModel.selectedSort?.id == sort.id ? .orange : .white.opacity(0.6))
                                     
-                                    // 底部指示条
+                                    // 底部指示条（腾讯视频式：橙色短条）
                                     RoundedRectangle(cornerRadius: 1.5)
                                         .fill(Color.orange)
                                         .frame(width: 20, height: 3)

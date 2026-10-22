@@ -32,6 +32,35 @@ class SearchViewModel: ObservableObject {
     @Published var searchHistory: [String] = []
     /// 搜索失败或空结果提示。
     @Published var errorMessage: String?
+    /// 结果筛选类型（腾讯视频式分类筛选，客户端实时过滤）。
+    @Published var filterType: String = "全部"
+    
+    /// 当前筛选下的可见结果。
+    var filteredResults: [SearchResultItem] {
+        guard filterType != "全部" else { return results }
+        return results.filter { Self.matchesFilter($0.video, filterType) }
+    }
+    
+    /// 按结果类型文本（vod_type，如"国产剧/动作片/综艺/动漫"）粗分类。
+    private static func matchesFilter(_ video: Movie.Video, _ type: String) -> Bool {
+        let haystack = video.type
+        switch type {
+        case "短剧":
+            return haystack.contains("短剧")
+        case "动漫":
+            return haystack.contains("动漫") || haystack.contains("动画")
+        case "综艺":
+            return haystack.contains("综艺")
+        case "电视剧":
+            if haystack.contains("短剧") { return false }
+            return haystack.contains("剧")
+        case "电影":
+            if haystack.contains("动漫") || haystack.contains("动画") || haystack.contains("短剧") { return false }
+            return haystack.contains("电影") || haystack.contains("片")
+        default:
+            return true
+        }
+    }
     
     /// 源数据服务（负责多源并发搜索）。
     private let sourceService = SourceService.shared

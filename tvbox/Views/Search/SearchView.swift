@@ -1,11 +1,15 @@
 import SwiftUI
 
-/// 搜索页 - 对应 Android 版 SearchActivity
+/// 搜索页 - 腾讯视频式布局
 struct SearchView: View {
     /// 搜索状态与结果管理。
     @StateObject private var viewModel = SearchViewModel()
     /// 搜索框焦点（用于统一收起键盘）。
     @FocusState private var searchFocused: Bool
+    /// 大家都在搜热词。
+    private let hotKeywords = ["狂飙", "庆余年", "三体", "繁花", "长相思", "莲花楼", "南来北往", "我的阿勒泰", "甄嬛传", "热辣滚烫"]
+    /// 结果筛选类型。
+    private let filterTypes = ["全部", "电影", "电视剧", "综艺", "动漫", "短剧"]
     
     #if os(iOS)
     /// iOS 卡片网格参数。
@@ -35,8 +39,8 @@ struct SearchView: View {
                         .tint(.orange)
                     Spacer()
                 } else if viewModel.keyword.isEmpty {
-                    // 输入为空时显示历史；输入非空但无结果时显示提示文案。
-                    searchHistorySection
+                    // 输入为空时显示历史 + 热词推荐（腾讯视频式）。
+                    searchIdleSection
                 } else if let error = viewModel.errorMessage {
                     Spacer()
                     VStack(spacing: 8) {
@@ -60,13 +64,13 @@ struct SearchView: View {
     
     // MARK: - 搜索栏
     
-    /// 顶部搜索输入区。
+    /// 顶部搜索输入区（腾讯视频式：简洁灰底圆角，无渐变描边）。
     private var searchBar: some View {
         HStack(spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.white.opacity(0.6))
                 
                 TextField("搜索影片...", text: $viewModel.keyword)
                     .textFieldStyle(.plain)
@@ -88,6 +92,7 @@ struct SearchView: View {
                         withAnimation {
                             viewModel.keyword = ""
                             viewModel.results = []
+                            viewModel.filterType = "全部"
                         }
                     } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -98,12 +103,8 @@ struct SearchView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color.white.opacity(0.05))
-            .cornerRadius(16)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(LinearGradient(colors: [.orange.opacity(0.5), .clear], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-            )
+            .background(Color.white.opacity(0.08))
+            .cornerRadius(10)
             
             Button {
                 searchFocused = false
@@ -112,136 +113,208 @@ struct SearchView: View {
                 Text("搜索")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(.white)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 18)
                     .padding(.vertical, 12)
-                    .background(LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing))
-                    .cornerRadius(14)
+                    .background(AppTheme.accentGradient)
+                    .cornerRadius(10)
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 10)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
+    }
+    
+    // MARK: - 空闲页（历史 + 热词）
+    
+    /// 输入为空时的腾讯视频式空闲页：搜索历史 + 大家都在搜。
+    private var searchIdleSection: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                // 搜索历史
+                if !viewModel.searchHistory.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("搜索历史")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Spacer()
+                            Button {
+                                viewModel.clearHistory()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "trash")
+                                    Text("清空")
+                                }
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                            }
+                        }
+                        
+                        FlowLayout(spacing: 8) {
+                            ForEach(viewModel.searchHistory, id: \.self) { keyword in
+                                Button {
+                                    searchFocused = false
+                                    viewModel.keyword = keyword
+                                    Task { await viewModel.search() }
+                                } label: {
+                                    Text(keyword)
+                                        .font(.subheadline)
+                                        .foregroundColor(.white.opacity(0.8))
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 7)
+                                        .background(Color.white.opacity(0.08))
+                                        .cornerRadius(16)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                
+                // 大家都在搜
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.orange)
+                        Text("大家都在搜")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                    }
+                    
+                    FlowLayout(spacing: 8) {
+                        ForEach(hotKeywords, id: \.self) { keyword in
+                            Button {
+                                searchFocused = false
+                                viewModel.keyword = keyword
+                                Task { await viewModel.search() }
+                            } label: {
+                                Text(keyword)
+                                    .font(.subheadline)
+                                    .foregroundColor(.orange.opacity(0.9))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 7)
+                                    .background(Color.orange.opacity(0.1))
+                                    .cornerRadius(16)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+        }
     }
     
     // MARK: - 搜索结果
     
-    /// 搜索结果网格。
+    /// 搜索结果：顶部筛选条 + 卡片网格。
     private var searchResults: some View {
-        ScrollView {
-            // 搜索仍在进行时显示轻量提示（结果已开始逐个出现）。
-            if viewModel.isSearching {
+        VStack(spacing: 0) {
+            // 腾讯视频式筛选条
+            ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.orange)
-                    Text("正在搜索更多源…")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("已出 \(viewModel.results.count) 个结果")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-            }
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(viewModel.results) { item in
-                    NavigationLink(value: item.video) {
-                        ZStack(alignment: .topTrailing) {
-                            VodCardView(
-                                video: item.video,
-                                onPosterLoaded: { url in
-                                    viewModel.registerLoadedPoster(for: item, url: url)
-                                }
-                            )
-                            // 来源站点名徽标
-                            Text(item.sourceName)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Color.black.opacity(0.55))
-                                .clipShape(Capsule())
-                                .padding(6)
-                        }
-                    }
-                    #if os(iOS)
-                    .buttonStyle(VodCardPressStyle())
-                    #else
-                    .buttonStyle(.plain)
-                    #endif
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-        }
-        // 手指在结果区一拖动/滚动立即收起键盘（腾讯视频式交互）。
-        // 注：结果较少时内容不满一屏，scrollDismissesKeyboard 不会触发，
-        // 因此用拖拽手势兜底，任何拖动都立即收起键盘。
-        .scrollDismissesKeyboard(.immediately)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 1)
-                .onChanged { _ in
-                    if searchFocused {
-                        searchFocused = false
-                    }
-                }
-        )
-        .navigationDestination(for: Movie.Video.self) { video in
-            DetailView(video: video)
-        }
-    }
-    
-    // MARK: - 搜索历史
-    
-    /// 搜索历史区域，支持复用历史关键词与一键清空。
-    private var searchHistorySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if !viewModel.searchHistory.isEmpty {
-                HStack {
-                    Text("搜索历史")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                    Spacer()
-                    Button {
-                        viewModel.clearHistory()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "trash")
-                            Text("清空")
-                        }
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                
-                FlowLayout(spacing: 8) {
-                    ForEach(viewModel.searchHistory, id: \.self) { keyword in
+                    ForEach(filterTypes, id: \.self) { type in
                         Button {
-                            searchFocused = false
-                            viewModel.keyword = keyword
-                            Task { await viewModel.search() }
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                viewModel.filterType = type
+                            }
                         } label: {
-                            Text(keyword)
-                                .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.8))
+                            Text(type)
+                                .font(.system(size: 13, weight: viewModel.filterType == type ? .bold : .regular))
+                                .foregroundColor(viewModel.filterType == type ? .orange : .white.opacity(0.6))
                                 .padding(.horizontal, 14)
-                                .padding(.vertical, 7)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(16)
+                                .padding(.vertical, 6)
+                                .background(viewModel.filterType == type ? Color.orange.opacity(0.15) : Color.clear)
+                                .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 20)
+                .padding(.vertical, 8)
             }
             
-            Spacer()
+            ScrollView {
+                // 搜索仍在进行时显示轻量提示（结果已开始逐个出现）。
+                if viewModel.isSearching {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.orange)
+                        Text("正在搜索更多源…")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("已出 \(viewModel.results.count) 个结果")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
+                }
+                
+                if viewModel.filteredResults.isEmpty && !viewModel.isSearching {
+                    VStack(spacing: 8) {
+                        Spacer()
+                        Text("该分类暂无结果")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 80)
+                }
+                
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(viewModel.filteredResults) { item in
+                        NavigationLink(value: item.video) {
+                            ZStack(alignment: .topTrailing) {
+                                VodCardView(
+                                    video: item.video,
+                                    onPosterLoaded: { url in
+                                        viewModel.registerLoadedPoster(for: item, url: url)
+                                    }
+                                )
+                                // 来源站点名徽标
+                                Text(item.sourceName)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(Color.black.opacity(0.55))
+                                    .clipShape(Capsule())
+                                    .padding(6)
+                            }
+                        }
+                        #if os(iOS)
+                        .buttonStyle(VodCardPressStyle())
+                        #else
+                        .buttonStyle(.plain)
+                        #endif
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+            }
+            // 手指在结果区一拖动/滚动立即收起键盘（腾讯视频式交互）。
+            // 注：结果较少时内容不满一屏，scrollDismissesKeyboard 不会触发，
+            // 因此用拖拽手势兜底，任何拖动都立即收起键盘。
+            .scrollDismissesKeyboard(.immediately)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { _ in
+                        if searchFocused {
+                            searchFocused = false
+                        }
+                    }
+            )
+        }
+        .navigationDestination(for: Movie.Video.self) { video in
+            DetailView(video: video)
         }
     }
 }
