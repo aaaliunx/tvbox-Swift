@@ -44,6 +44,10 @@ struct LiveView: View {
     @State private var showCurrentChannelInfo = true
     /// 顶部返回/频道按钮是否显示（与频道信息卡联动自动隐藏）。
     @State private var showLiveTopBar = true
+    /// 内联播放器控制条（返回/频道/线路/播放暂停/全屏）是否显示。
+    @State private var showLiveInlineControls = true
+    /// 内联播放器控制条自动隐藏任务。
+    @State private var hideLiveInlineControlsTask: Task<Void, Never>?
     /// 直播线路全部失败时的错误提示（非空时显示，含返回按钮，不自动隐藏）。
     @State private var playbackFailureText: String?
     /// 直播共享播放器：普通页与全屏页共用同一实例，避免同时播放产生双声音。
@@ -87,6 +91,7 @@ struct LiveView: View {
                                 urlString: urlString,
                                 sharedController: livePlayerController,
                                 activityToken: vlcInteractionToken,
+                                hidesBuiltinControls: true,
                                 onPlaybackFailed: {
                                     handlePlaybackFailure(trigger: "vlc_error")
                                 },
@@ -107,9 +112,8 @@ struct LiveView: View {
                     
                     #if os(iOS)
                     // 手势层置于播放器之上、覆盖 UI 之下：
-                    // 单击唤出顶部按钮+底部控制条（通过 vlcInteractionToken 通知播放器），
-                    // 双击暂停/播放，右侧滑动调音量。覆盖 UI（返回/频道/控制条）在上层，
-                    // 按钮可正常点击；空白区域点击穿透到手势层唤出控件。
+                    // 单击唤出底部控制条（返回/频道/线路/播放暂停/全屏），
+                    // 双击暂停/播放，右侧滑动调音量。
                     LivePlayerGestureLayer(
                         onTogglePlayPause: {
                             reportUserActivity()
@@ -117,12 +121,16 @@ struct LiveView: View {
                         },
                         onToggleControls: {
                             reportUserActivity()
+                            showLiveInlineControlsAction()
                         },
                         onVolumeChanged: { delta in
                             let newVol = max(0, min(200, livePlayerController.volume + Int(delta * 200)))
                             livePlayerController.setVolume(newVol)
                         }
                     )
+
+                    // 播放器控制条（返回/频道/线路/播放暂停/全屏，腾讯风格）
+                    liveInlineControls
                     #endif
                     
                     // 覆盖 UI（置于手势层之上，按钮优先响应点击）
@@ -252,10 +260,8 @@ struct LiveView: View {
             #endif
             
             VStack(spacing: 0) {
+                #if os(macOS)
                 HStack {
-                    #if os(iOS)
-                    liveBackButton
-                    #endif
                     channelDrawerToggleButton
                     Spacer()
                 }
@@ -263,8 +269,9 @@ struct LiveView: View {
                 .padding(.horizontal, 16)
                 .opacity(showLiveTopBar ? 1.0 : 0.0)
                 .animation(.easeInOut(duration: 0.25), value: showLiveTopBar)
-                // 隐藏时禁止点击，避免误触隐藏的返回/频道按钮。
+                // 隐藏时禁止点击，避免误触隐藏的按钮。
                 .allowsHitTesting(showLiveTopBar)
+                #endif
                 
                 Spacer()
                 
@@ -398,26 +405,132 @@ struct LiveView: View {
     }
     
     #if os(iOS)
-    private var liveBackButton: some View {
-        Button {
-            HapticManager.shared.lightImpact()
-            onExit?()
-        } label: {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white.opacity(0.9))
-                .frame(width: 38, height: 38)
-                .background(Color.black.opacity(0.35))
-                .clipShape(Circle())
-                .overlay(
-                    Circle()
-                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                )
+    /// 内联播放器控制条（腾讯风格）：返回/频道/线路/播放暂停/全屏。
+    /// 单击画面唤出，3.5s 自动隐藏。
+    private var liveInlineControls: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 18) {
+                Button {
+                    HapticManager.shared.lightImpact()
+                    onExit?()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    HapticManager.shared.lightImpact()
+                    showChannelOverlay = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("频道")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    HapticManager.shared.lightImpact()
+                    showLiveInlineControlsAction()
+                    viewModel.switchSource()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("线路")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    showLiveInlineControlsAction()
+                    toggleInlineLivePlayPause()
+                } label: {
+                    Image(systemName: isInlineLivePlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    HapticManager.shared.lightImpact()
+                    showLiveFullScreen = true
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background(Color.black.opacity(0.5), in: Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+            )
+            .padding(.bottom, showCurrentChannelInfo ? 150 : 16)
+            .opacity(showLiveInlineControls ? 1 : 0)
+            .animation(.easeInOut(duration: 0.25), value: showLiveInlineControls)
+            .allowsHitTesting(showLiveInlineControls)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 唤出内联控制条并重置 3.5s 自动隐藏。
+    private func showLiveInlineControlsAction() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            showLiveInlineControls = true
+        }
+        hideLiveInlineControlsTask?.cancel()
+        let task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.4)) {
+                showLiveInlineControls = false
+            }
+        }
+        hideLiveInlineControlsTask = task
+    }
+
+    /// 当前直播是否处于播放状态（按引擎区分）。
+    private var isInlineLivePlaying: Bool {
+        if selectedEngine == .system {
+            return avPlayer?.timeControlStatus == .playing
+        }
+        return livePlayerController.isPlaying
+    }
+
+    /// 内联播放/暂停（按引擎区分）。
+    private func toggleInlineLivePlayPause() {
+        if selectedEngine == .system {
+            guard let player = avPlayer else { return }
+            if player.timeControlStatus == .playing {
+                player.pause()
+            } else {
+                player.playImmediately(atRate: player.defaultRate)
+            }
+        } else {
+            livePlayerController.togglePlayback()
+        }
     }
     #endif
-    
+
     private var channelDrawerToggleButton: some View {
         Button {
             #if os(iOS)
@@ -862,6 +975,8 @@ struct LiveFullScreenPlayerView: View {
     @Environment(\.dismiss) private var dismiss
     /// 左右横屏方向标记（旋转按钮切换 landscapeLeft/Right）。
     @State private var isLandscapeLeft = false
+    /// 切后台再返回时重新应用播放器朝向。
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -875,8 +990,8 @@ struct LiveFullScreenPlayerView: View {
                         AVPlayerViewControllerRepresentable(
                             player: systemPlayer,
                             onViewAppeared: {
-                                // 播放控制器真正呈现后强制横屏（比 SwiftUI onAppear 更可靠）。
-                                DeviceOrientation.forceLandscape()
+                                // 播放控制器真正呈现后按视频方向设置朝向（比 SwiftUI onAppear 更可靠）。
+                                applyPlayerOrientation(player: systemPlayer)
                             }
                         )
                         .ignoresSafeArea()
@@ -915,19 +1030,27 @@ struct LiveFullScreenPlayerView: View {
         }
         .ignoresSafeArea()
         .statusBarHidden(true)
-        // 全屏即横屏：系统几何更新 + 设备方向双保险。
-        // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制横屏。
+        // 全屏朝向跟随视频方向：横版强制横屏、竖版保持竖屏。
+        // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制目标朝向。
         .onAppear {
             showControls()
             // 转场期间多次尝试，确保方向落地。
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                DeviceOrientation.forceLandscape()
+                applyPlayerOrientation(player: systemPlayer)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                DeviceOrientation.forceLandscape()
+                applyPlayerOrientation(player: systemPlayer)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                DeviceOrientation.forceLandscape()
+                applyPlayerOrientation(player: systemPlayer)
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // 切后台再返回会恢复竖屏：回到前台时按视频方向重新应用朝向。
+            if phase == .active {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    applyPlayerOrientation(player: systemPlayer)
+                }
             }
         }
         .onDisappear {

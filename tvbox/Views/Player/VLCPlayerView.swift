@@ -1657,6 +1657,8 @@ struct VLCLivePlayerView: View {
     var controlsBottomInset: CGFloat = 130
     /// 是否在视图出现时自动开始播放。全屏页复用共享播放器时应传 false，避免重复加载。
     var autoStart: Bool = true
+    /// 由外层提供统一控制条时隐藏自带播放/全屏胶囊，避免重复。
+    var hidesBuiltinControls: Bool = false
     @StateObject private var ownedController = VLCPlayerController()
     private var controller: VLCPlayerController { sharedController ?? ownedController }
     private var volumeStep: Int { 10 }
@@ -1699,9 +1701,11 @@ struct VLCLivePlayerView: View {
         }
         #if os(iOS)
         .overlay(alignment: .bottom) {
-            liveControlsOverlay
-                .opacity(showControls ? 1.0 : 0.0)
-                .animation(.easeInOut(duration: 0.3), value: showControls)
+            if !hidesBuiltinControls {
+                liveControlsOverlay
+                    .opacity(showControls ? 1.0 : 0.0)
+                    .animation(.easeInOut(duration: 0.3), value: showControls)
+            }
         }
         #endif
         .overlay {

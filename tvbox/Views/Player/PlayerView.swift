@@ -798,6 +798,44 @@ struct TencentStylePlayerOverlay: View {
         return String(format: "%02d:%02d", m, s)
     }
 }
+
+// MARK: - 视频方向检测与全屏朝向
+
+/// 异步读取 AVAsset 首个视频轨道的自然尺寸（用于判断横/竖版）。
+func videoTrackNaturalSize(_ asset: AVAsset) async -> CGSize {
+    guard let track = try? await asset.loadTracks(withMediaType: .video).first else {
+        return .zero
+    }
+    return (try? await track.load(.naturalSize)) ?? .zero
+}
+
+/// 根据当前播放内容的视频方向决定全屏朝向：
+/// 竖版内容（高>宽）保持竖屏全屏，横版/未知内容强制横屏。
+/// 解决"全屏下观看竖版视频被强制横屏"的问题。
+func applyPlayerOrientation(player: AVPlayer?) {
+    guard let player else {
+        DeviceOrientation.forceLandscape()
+        return
+    }
+    let size = player.currentItem?.presentationSize ?? .zero
+    if size.height > size.width + 1 {
+        DeviceOrientation.forcePortrait()
+    } else if size.width > size.height + 1 {
+        DeviceOrientation.forceLandscape()
+    } else {
+        // 尺寸未知（播放器尚未解析完成）：先按横屏处理，异步解析后再校正。
+        DeviceOrientation.forceLandscape()
+        if let asset = player.currentItem?.asset {
+            Task { @MainActor in
+                let natural = await videoTrackNaturalSize(asset)
+                guard natural.height > 0, natural.width > 0 else { return }
+                if natural.height > natural.width + 1 {
+                    DeviceOrientation.forcePortrait()
+                }
+            }
+        }
+    }
+}
 #endif
 
 #if os(macOS)

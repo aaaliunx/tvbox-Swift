@@ -724,6 +724,8 @@ struct FullScreenPlayerView: View {
     var selectedEpisodeIndex: Int = 0
     var onSelectEpisode: ((Int) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    /// 切后台再返回时重新应用播放器朝向。
+    @Environment(\.scenePhase) private var scenePhase
     /// 左右横屏方向标记（用于旋转按钮切换 landscapeLeft/Right）。
     @State private var isLandscapeLeft = false
     @AppStorage(HawkConfig.PLAY_TYPE_VOD) private var vodPlayTypeRaw = -1
@@ -755,8 +757,8 @@ struct FullScreenPlayerView: View {
                         AVPlayerViewControllerRepresentable(
                             player: player,
                             onViewAppeared: {
-                                // 播放控制器真正呈现后强制横屏（比 SwiftUI onAppear 更可靠）。
-                                DeviceOrientation.forceLandscape()
+                                // 播放控制器真正呈现后按视频方向设置朝向（比 SwiftUI onAppear 更可靠）。
+                                applyPlayerOrientation(player: player)
                             }
                         )
                         .ignoresSafeArea()
@@ -806,19 +808,27 @@ struct FullScreenPlayerView: View {
         .ignoresSafeArea()
         #if os(iOS)
         .statusBarHidden(true)
-        // 全屏即横屏：系统几何更新 + 设备方向双保险（Info.plist 已声明横屏）。
-        // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制横屏。
+        // 全屏朝向跟随视频方向：横版强制横屏、竖版保持竖屏（Info.plist 已声明全部方向）。
+        // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制目标朝向。
         .onAppear {
             showControls()
             // 转场期间多次尝试，确保方向落地。
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                DeviceOrientation.forceLandscape()
+                applyPlayerOrientation(player: systemController?.player)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                DeviceOrientation.forceLandscape()
+                applyPlayerOrientation(player: systemController?.player)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                DeviceOrientation.forceLandscape()
+                applyPlayerOrientation(player: systemController?.player)
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // 切后台再返回会恢复竖屏：回到前台时按视频方向重新应用朝向。
+            if phase == .active {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    applyPlayerOrientation(player: systemController?.player)
+                }
             }
         }
         .onDisappear {
