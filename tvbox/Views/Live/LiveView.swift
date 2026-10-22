@@ -84,55 +84,8 @@ struct LiveView: View {
                 if viewModel.channelGroups.isEmpty {
                     emptyState
                 } else {
-                    // 播放器
-                    if selectedEngine == .vlc {
-                        if let urlString = viewModel.currentChannel?.currentUrl, !urlString.isEmpty {
-                            VLCLivePlayerView(
-                                urlString: urlString,
-                                sharedController: livePlayerController,
-                                activityToken: vlcInteractionToken,
-                                hidesBuiltinControls: true,
-                                onPlaybackFailed: {
-                                    handlePlaybackFailure(trigger: "vlc_error")
-                                },
-                                onToggleFullScreen: {
-                                    toggleWindowFullScreen()
-                                },
-                                onUserActivity: {
-                                    reportUserActivity()
-                                }
-                            )
-                            .ignoresSafeArea()
-                            .id("vlc-live-\(urlString)-\(viewModel.currentChannel?.id ?? "")")
-                        }
-                    } else if let player = avPlayer {
-                        PlatformVideoPlayer(player: player)
-                            .ignoresSafeArea()
-                    }
-                    
-                    #if os(iOS)
-                    // 手势层置于播放器之上、覆盖 UI 之下：
-                    // 单击唤出底部控制条（返回/频道/线路/播放暂停/全屏），
-                    // 双击暂停/播放，右侧滑动调音量。
-                    LivePlayerGestureLayer(
-                        onTogglePlayPause: {
-                            reportUserActivity()
-                            livePlayerController.togglePlayback()
-                        },
-                        onToggleControls: {
-                            reportUserActivity()
-                            showLiveInlineControlsAction()
-                        },
-                        onVolumeChanged: { delta in
-                            let newVol = max(0, min(200, livePlayerController.volume + Int(delta * 200)))
-                            livePlayerController.setVolume(newVol)
-                        }
-                    )
+                    livePlayerLayer
 
-                    // 播放器控制条（返回/频道/线路/播放暂停/全屏，腾讯风格）
-                    liveInlineControls
-                    #endif
-                    
                     // 覆盖 UI（置于手势层之上，按钮优先响应点击）
                     overlayUI
                 }
@@ -226,6 +179,60 @@ struct LiveView: View {
         }
     }
     
+    // MARK: - 播放器层
+
+    /// 播放器（VLC / 系统引擎）+ iOS 手势层，拆分为独立属性降低 body 类型复杂度。
+    @ViewBuilder
+    private var livePlayerLayer: some View {
+        if selectedEngine == .vlc {
+            if let urlString = viewModel.currentChannel?.currentUrl, !urlString.isEmpty {
+                VLCLivePlayerView(
+                    urlString: urlString,
+                    sharedController: livePlayerController,
+                    activityToken: vlcInteractionToken,
+                    hidesBuiltinControls: true,
+                    onPlaybackFailed: {
+                        handlePlaybackFailure(trigger: "vlc_error")
+                    },
+                    onToggleFullScreen: {
+                        toggleWindowFullScreen()
+                    },
+                    onUserActivity: {
+                        reportUserActivity()
+                    }
+                )
+                .ignoresSafeArea()
+                .id("vlc-live-\(urlString)-\(viewModel.currentChannel?.id ?? "")")
+            }
+        } else if let player = avPlayer {
+            PlatformVideoPlayer(player: player)
+                .ignoresSafeArea()
+        }
+
+        #if os(iOS)
+        // 手势层置于播放器之上、覆盖 UI 之下：
+        // 单击唤出底部控制条（返回/频道/线路/播放暂停/全屏），
+        // 双击暂停/播放，右侧滑动调音量。
+        LivePlayerGestureLayer(
+            onTogglePlayPause: {
+                reportUserActivity()
+                livePlayerController.togglePlayback()
+            },
+            onToggleControls: {
+                reportUserActivity()
+                showLiveInlineControlsAction()
+            },
+            onVolumeChanged: { delta in
+                let newVol = max(0, min(200, livePlayerController.volume + Int(delta * 200)))
+                livePlayerController.setVolume(newVol)
+            }
+        )
+
+        // 播放器控制条（返回/频道/线路/播放暂停/全屏，腾讯风格）
+        liveInlineControls
+        #endif
+    }
+
     // MARK: - 空状态
     
     private var emptyState: some View {
