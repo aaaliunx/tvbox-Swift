@@ -31,12 +31,30 @@ import AVKit
 struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     let player: AVPlayer?
     var showsControls: Bool = true
+    /// 播放控制器视图已加入窗口、转场基本完成后回调（用于方向强制落地）。
+    var onViewAppeared: (() -> Void)? = nil
+
+    final class Coordinator {
+        var onViewAppeared: (() -> Void)?
+        init(onViewAppeared: (() -> Void)?) {
+            self.onViewAppeared = onViewAppeared
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onViewAppeared: onViewAppeared)
+    }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let vc = AVPlayerViewController()
         vc.player = player
         vc.showsPlaybackControls = showsControls
         vc.allowsPictureInPicturePlayback = false
+        // 转场动画（约 0.4s）完成后通知 SwiftUI 侧做方向兜底，
+        // 比 SwiftUI onAppear 更可靠（此时控制器已真实呈现在窗口上）。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            context.coordinator.onViewAppeared?()
+        }
         return vc
     }
 
@@ -47,7 +65,47 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         if uiViewController.showsPlaybackControls != showsControls {
             uiViewController.showsPlaybackControls = showsControls
         }
+        context.coordinator.onViewAppeared = onViewAppeared
     }
+}
+
+import MediaPlayer
+
+/// 全屏页手势层：左侧垂直滑动调亮度、右侧垂直滑动调音量、单击唤出悬浮按钮。
+/// 仅在悬浮按钮隐藏（控制条可操作期）时叠加，避免遮挡 AVPlayerViewController 控制条。
+struct FullScreenGestureLayer: View {
+    let onBrightness: (CGFloat) -> Void
+    let onVolume: (CGFloat) -> Void
+    let onTap: () -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 8)
+                        .onChanged { value in
+                            let startX = value.startLocation.x
+                            let delta = -value.translation.height / 300.0
+                            if startX < geometry.size.width * 0.5 {
+                                onBrightness(delta)
+                            } else {
+                                onVolume(delta)
+                            }
+                        }
+                )
+                .onTapGesture {
+                    onTap()
+                }
+        }
+    }
+}
+
+/// 系统音量调节（通过 MPVolumeView 的私有 UISlider 设置系统音量）。
+func setSystemVolume(delta: CGFloat) {
+    let volumeView = MPVolumeView()
+    guard let slider = volumeView.subviews.compactMap({ $0 as? UISlider }).first else { return }
+    slider.value = min(max(slider.value + Float(delta), 0), 1)
 }
 #endif
 

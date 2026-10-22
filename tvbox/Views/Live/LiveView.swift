@@ -852,9 +852,15 @@ struct LiveFullScreenPlayerView: View {
                 if useSystemEngine {
                     // 系统引擎：官方 AVPlayerViewController（控制条横屏底部、手势齐全）。
                     if let systemPlayer {
-                        AVPlayerViewControllerRepresentable(player: systemPlayer)
-                            .ignoresSafeArea()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        AVPlayerViewControllerRepresentable(
+                            player: systemPlayer,
+                            onViewAppeared: {
+                                // 播放控制器真正呈现后强制横屏（比 SwiftUI onAppear 更可靠）。
+                                DeviceOrientation.forceLandscape()
+                            }
+                        )
+                        .ignoresSafeArea()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 } else if !urlString.isEmpty {
                     VLCLivePlayerView(
@@ -869,10 +875,41 @@ struct LiveFullScreenPlayerView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(alignment: .topTrailing) {
+
+            // 悬浮按钮隐藏时的手势层：左侧滑亮度、右侧滑音量、单击唤出按钮。
+            if !controlsVisible {
+                FullScreenGestureLayer(
+                    onBrightness: { delta in
+                        UIScreen.main.brightness = min(max(UIScreen.main.brightness + delta, 0), 1)
+                        showOSD("亮度 \(Int(UIScreen.main.brightness * 100))%")
+                    },
+                    onVolume: { delta in
+                        setSystemVolume(delta: delta)
+                        showOSD("音量")
+                    },
+                    onTap: { showControls() }
+                )
+            }
+
+            // 亮度/音量调节提示
+            if let osdText {
+                Text(osdText)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .opacity(osdOpacity)
+                    .allowsHitTesting(false)
+            }
+
+            // 悬浮按钮（自动隐藏，单击唤出）
+            VStack {
                 HStack(spacing: 16) {
                     // 左右翻转横屏（系统方向请求 + 设备方向兜底）
                     Button {
+                        showControls()
                         isLandscapeLeft.toggle()
                         if isLandscapeLeft {
                             DeviceOrientation.forceLandscapeLeft()
@@ -894,19 +931,71 @@ struct LiveFullScreenPlayerView: View {
                     }
                 }
                 .padding()
+                .background(Color.black.opacity(0.35), in: Capsule())
+                .opacity(controlsVisible ? 1 : 0)
+                .animation(.easeInOut(duration: 0.25), value: controlsVisible)
+                Spacer()
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.top, 4)
+            .allowsHitTesting(controlsVisible)
         }
         .ignoresSafeArea()
         .statusBarHidden(true)
         // 全屏即横屏：系统几何更新 + 设备方向双保险。
         // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制横屏。
         .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            showControls()
+            // 转场期间多次尝试，确保方向落地。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                DeviceOrientation.forceLandscape()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                DeviceOrientation.forceLandscape()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 DeviceOrientation.forceLandscape()
             }
         }
         .onDisappear {
             DeviceOrientation.forcePortrait()
+            hideControlsTask?.cancel()
+        }
+    }
+
+    // MARK: - 悬浮按钮显隐
+
+    @State private var controlsVisible = true
+    @State private var hideControlsTask: Task<Void, Never>?
+    @State private var osdText: String?
+    @State private var osdOpacity: Double = 0
+    @State private var osdTimer: Timer?
+
+    private func showControls() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            controlsVisible = true
+        }
+        hideControlsTask?.cancel()
+        let task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.4)) {
+                controlsVisible = false
+            }
+        }
+        hideControlsTask = task
+    }
+
+    private func showOSD(_ text: String) {
+        osdText = text
+        withAnimation(.easeInOut(duration: 0.15)) {
+            osdOpacity = 1
+        }
+        osdTimer?.invalidate()
+        osdTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
+            withAnimation(.easeOut(duration: 0.4)) {
+                osdOpacity = 0
+            }
         }
     }
 }
