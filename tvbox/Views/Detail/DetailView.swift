@@ -29,30 +29,7 @@ struct DetailView: View {
         ScrollView {
             VStack(spacing: 0) {
                 // 播放器区域
-                if !showFullScreen, !isFullScreenDismissing, viewModel.isPlaying, let url = viewModel.playUrl {
-                    PlayerView(
-                        urlString: url,
-                        startPosition: viewModel.currentPlaybackSeconds(),
-                        onProgressChanged: handlePlaybackProgress,
-                        onPlaybackEnded: playNextEpisodeIfNeeded,
-                        onPlaybackFailed: {
-                            handlePlaybackFailed()
-                        },
-                        onToggleFullScreen: {
-                            openFullScreenPlayer()
-                        },
-                        canPlayNext: canPlayNextEpisode,
-                        onPlayNext: playNextEpisodeIfNeeded,
-                        systemController: sharedSystemController,
-                        vlcController: sharedVLCController
-                    )
-                        .id("\(viewModel.selectedFlag)-\(viewModel.selectedEpisodeIndex)-\(url)")
-                        .aspectRatio(16/9, contentMode: .fit)
-                        .background(Color.black)
-                        .onTapGesture(count: 2) {
-                            openFullScreenPlayer()
-                        }
-                }
+                playerSection
                 
                 // 视频信息
                 videoInfoSection
@@ -101,7 +78,7 @@ struct DetailView: View {
             restorePlaybackFromHistory()
             refreshCollectState()
         }
-        .onReceive(RemoteControlService.playRequestNotification) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: RemoteControlService.playRequestNotification)) { notification in
             // 局域网遥控：播放指定地址。
             if let url = notification.userInfo?["url"] as? String {
                 viewModel.playSniffed(url: url)
@@ -175,6 +152,65 @@ struct DetailView: View {
     }
     
     // MARK: - 视频信息
+    
+    #if os(iOS)
+    /// 播放器区域（独立计算属性，降低 body 类型推断复杂度）。
+    @ViewBuilder
+    private var playerSection: some View {
+        if !showFullScreen, !isFullScreenDismissing, viewModel.isPlaying, let url = viewModel.playUrl {
+            PlayerView(
+                urlString: url,
+                startPosition: viewModel.currentPlaybackSeconds(),
+                onProgressChanged: handlePlaybackProgress,
+                onPlaybackEnded: playNextEpisodeIfNeeded,
+                onPlaybackFailed: {
+                    handlePlaybackFailed()
+                },
+                onToggleFullScreen: {
+                    openFullScreenPlayer()
+                },
+                canPlayNext: canPlayNextEpisode,
+                onPlayNext: playNextEpisodeIfNeeded,
+                systemController: sharedSystemController,
+                vlcController: sharedVLCController
+            )
+            .id("\(viewModel.selectedFlag)-\(viewModel.selectedEpisodeIndex)-\(url)")
+            .aspectRatio(16/9, contentMode: .fit)
+            .background(Color.black)
+            .onTapGesture(count: 2) {
+                openFullScreenPlayer()
+            }
+        }
+    }
+    #else
+    @ViewBuilder
+    private var playerSection: some View {
+        if !showFullScreen, viewModel.isPlaying, let url = viewModel.playUrl {
+            PlayerView(
+                urlString: url,
+                startPosition: viewModel.currentPlaybackSeconds(),
+                onProgressChanged: handlePlaybackProgress,
+                onPlaybackEnded: playNextEpisodeIfNeeded,
+                onPlaybackFailed: {
+                    handlePlaybackFailed()
+                },
+                onToggleFullScreen: {
+                    openFullScreenPlayer()
+                },
+                canPlayNext: canPlayNextEpisode,
+                onPlayNext: playNextEpisodeIfNeeded,
+                systemController: sharedSystemController,
+                vlcController: sharedVLCController
+            )
+            .id("\(viewModel.selectedFlag)-\(viewModel.selectedEpisodeIndex)-\(url)")
+            .aspectRatio(16/9, contentMode: .fit)
+            .background(Color.black)
+            .onTapGesture(count: 2) {
+                openFullScreenPlayer()
+            }
+        }
+    }
+    #endif
     
     #if os(iOS)
     @ViewBuilder

@@ -1084,17 +1084,17 @@ struct VLCVodPlayerView: View {
         .sheet(isPresented: $showSubtitleMenu) {
             subtitleMenu
         }
-        .onReceive(RemoteControlService.pauseRequestNotification) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: RemoteControlService.pauseRequestNotification)) { _ in
             if controller.isPlaying {
                 controller.togglePlayback()
             }
         }
-        .onReceive(RemoteControlService.resumeRequestNotification) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: RemoteControlService.resumeRequestNotification)) { _ in
             if !controller.isPlaying {
                 controller.togglePlayback()
             }
         }
-        .onReceive(RemoteControlService.volumeRequestNotification) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: RemoteControlService.volumeRequestNotification)) { notification in
             if let level = notification.userInfo?["level"] as? Int {
                 controller.setVolume(level)
             }

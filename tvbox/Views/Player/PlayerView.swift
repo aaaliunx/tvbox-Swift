@@ -309,17 +309,17 @@ struct AVPlayerContentView: View {
             hideControlsTask = nil
             osdTimer?.invalidate()
         }
-        .onReceive(RemoteControlService.pauseRequestNotification) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: RemoteControlService.pauseRequestNotification)) { _ in
             if isPlaying {
                 player?.pause()
             }
         }
-        .onReceive(RemoteControlService.resumeRequestNotification) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: RemoteControlService.resumeRequestNotification)) { _ in
             if !isPlaying, let player {
                 player.playImmediately(atRate: rate)
             }
         }
-        .onReceive(RemoteControlService.volumeRequestNotification) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: RemoteControlService.volumeRequestNotification)) { notification in
             if let level = notification.userInfo?["level"] as? Int {
                 player?.volume = Float(level) / 100.0
             }
