@@ -243,36 +243,41 @@ final class SmartSkipController: ObservableObject {
         var windowSamples: Int = Int(sampleRate * window)
 
         while let sb = output.copyNextSampleBuffer() {
-            if !haveRate, let fmt = CMSampleBufferGetFormatDescription(sb) {
+            var channels = 2
+            if let fmt = CMSampleBufferGetFormatDescription(sb) {
                 var asbd = AudioStreamBasicDescription()
                 CMAudioFormatDescriptionGetStreamBasicDescription(fmt, &asbd)
                 if asbd.mSampleRate > 0 {
                     sampleRate = Double(asbd.mSampleRate)
-                    windowSamples = max(1, Int(sampleRate * window))
                     haveRate = true
                 }
+                if asbd.mChannelsPerFrame > 0 {
+                    channels = Int(asbd.mChannelsPerFrame)
+                }
             }
-            // 拷贝出 AudioBufferList（PCM 交错为单 buffer；返回内存用系统默认分配器，处理完释放）。
-            var ablPtr: UnsafeMutablePointer<AudioBufferList>? = nil
-            var sizeNeeded: Int = 0
-            let err = CMSampleBufferCopyAudioBufferList(
-                sb, &sizeNeeded, &ablPtr, 0, kCFAllocatorDefault)
-            guard err == noErr, let abl = ablPtr else { continue }
-            defer { CFAllocatorDeallocate(kCFAllocatorDefault, UnsafeRawPointer(abl)) }
-            let bufs = UnsafeMutableAudioBufferListPointer(abl)
-            for buf in bufs {
-                guard let data = buf.mData, buf.mDataByteSize > 0 else { continue }
-                let count = Int(buf.mDataByteSize) / MemoryLayout<Float>.size
-                let samples = data.assumingMemoryBound(to: Float.self)
-                for i in 0..<count {
-                    let v = Double(samples[i])
-                    acc += v * v
-                    accCount += 1
-                    if accCount >= windowSamples {
-                        rms.append(sqrt(acc / Double(accCount)))
-                        acc = 0
-                        accCount = 0
-                    }
+            windowSamples = max(1, Int(sampleRate * window))
+            // 用 CMSampleBufferCopyPCMDataIntoAudioBufferList 拷出 PCM（调用者提供缓冲，无需手动释放）。
+            let numFrames = CMSampleBufferGetNumSamples(sb)
+            guard numFrames > 0 else { continue }
+            var samples = [Float](repeating: 0, count: Int(numFrames) * channels)
+            let err = samples.withUnsafeMutableBytes { raw -> OSStatus in
+                var abl = AudioBufferList()
+                abl.mNumberBuffers = 1
+                abl.mBuffers.0.mNumberChannels = UInt32(channels)
+                abl.mBuffers.0.mDataByteSize = raw.count
+                abl.mBuffers.0.mData = raw.baseAddress
+                return CMSampleBufferCopyPCMDataIntoAudioBufferList(
+                    sb, frameOffset: 0, frameCount: Int32(numFrames), bufferList: &abl)
+            }
+            guard err == noErr else { continue }
+            for v in samples {
+                let f = Double(v)
+                acc += f * f
+                accCount += 1
+                if accCount >= windowSamples {
+                    rms.append(sqrt(acc / Double(accCount)))
+                    acc = 0
+                    accCount = 0
                 }
             }
         }
