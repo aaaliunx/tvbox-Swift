@@ -294,6 +294,30 @@ struct TencentStylePlayerOverlay: View {
 
     private static let playbackRates: [Float] = [1.0, 1.25, 1.5, 2.0]
 
+    /// 读取窗口安全区顶部高度（灵动岛/刘海机型竖屏时约 47-59pt，
+    /// 横屏时约 0-21pt），供标题栏避让使用。父容器 ignoresSafeArea 后
+    /// SwiftUI 的 safeAreaPadding 拿不到真实值，需直接查 UIWindow。
+    private static func safeTopInset() -> CGFloat {
+        #if os(iOS)
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = scene.windows.first else { return 0 }
+        return window.safeAreaInsets.top
+        #else
+        return 0
+        #endif
+    }
+
+    /// 读取窗口安全区底部高度（Home 指示条高度），供底部控制栏避让。
+    private static func safeBottomInset() -> CGFloat {
+        #if os(iOS)
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = scene.windows.first else { return 0 }
+        return window.safeAreaInsets.bottom
+        #else
+        return 0
+        #endif
+    }
+
     var body: some View {
         ZStack {
             Color.clear
@@ -399,8 +423,9 @@ struct TencentStylePlayerOverlay: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 12)
-                // 全屏容器 ignoresSafeArea 后手动避让灵动岛/状态栏，保证标题与返回键不被遮挡。
-                .safeAreaPadding(.top, 6)
+                // 直接用窗口安全区顶部高度避让灵动岛/状态栏（父容器 ignoresSafeArea 后
+                // safeAreaPadding 不生效），保证标题与返回键不被遮挡。
+                .padding(.top, max(Self.safeTopInset(), 8))
                 .padding(.bottom, 10)
                 .background(
                     LinearGradient(
@@ -756,8 +781,8 @@ struct TencentStylePlayerOverlay: View {
         .foregroundColor(.white)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        // 全屏容器 ignoresSafeArea 后手动避让底部 Home 指示条。
-        .safeAreaPadding(.bottom, 8)
+        // 直接读取窗口安全区底部高度避让 Home 指示条（safeAreaPadding 在 ignoresSafeArea 容器内不生效）。
+        .padding(.bottom, Self.safeBottomInset())
         .background(
             LinearGradient(
                 colors: [.clear, .black.opacity(0.72)],
