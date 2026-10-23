@@ -24,6 +24,8 @@ targets:
     dependencies:
       - package: VLCKitSPM
         product: VLCKitSPM
+      # 嵌入 Live Activity Widget Extension，确保打进 App 的 PlugIns 目录。
+      - target: tvboxLiveActivity
     sources:
       - path: tvbox
         excludes:
