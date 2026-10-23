@@ -263,11 +263,11 @@ final class SmartSkipController: ObservableObject {
             let err = samples.withUnsafeMutableBytes { raw -> OSStatus in
                 var abl = AudioBufferList()
                 abl.mNumberBuffers = 1
-                abl.mBuffers.0.mNumberChannels = UInt32(channels)
-                abl.mBuffers.0.mDataByteSize = raw.count
-                abl.mBuffers.0.mData = raw.baseAddress
+                abl.mBuffers.mNumberChannels = UInt32(channels)
+                abl.mBuffers.mDataByteSize = raw.count
+                abl.mBuffers.mData = raw.baseAddress
                 return CMSampleBufferCopyPCMDataIntoAudioBufferList(
-                    sb, frameOffset: 0, frameCount: Int32(numFrames), bufferList: &abl)
+                    sb, 0, Int32(numFrames), &abl)
             }
             guard err == noErr else { continue }
             for v in samples {
