@@ -119,16 +119,26 @@ extension Double {
 // MARK: - Design System (Merged from DesignSystem.swift)
 
 struct AppTheme {
-    // 腾讯视频式深黑背景（近纯黑，轻微暖黑渐变）
+    // 腾讯视频 iOS 式浅色白底（页面浅色、播放器深色）
     static let primaryGradient = LinearGradient(
         colors: [
-            Color(hex: "141414"),
-            Color(hex: "181818"),
-            Color(hex: "101010")
+            Color(hex: "FFFFFF"),
+            Color(hex: "F7F8FA"),
+            Color(hex: "F2F3F5")
         ],
         startPoint: .top,
         endPoint: .bottom
     )
+    /// 页面背景色。
+    static let pageBackground = Color(hex: "F7F8FA")
+    /// 卡片背景色。
+    static let cardBackground = Color.white
+    /// 主文字色（近黑）。
+    static let textPrimary = Color(hex: "1A1A1A")
+    /// 次要文字色（灰）。
+    static let textSecondary = Color(hex: "999999")
+    /// 分割线/占位底。
+    static let divider = Color(hex: "EEEEEE")
     
     static let accentGradient = LinearGradient(
         colors: [.orange, .red],
@@ -136,10 +146,10 @@ struct AppTheme {
         endPoint: .trailing
     )
     
-    static let glassBackgroud = Color.white.opacity(0.1)
+    static let glassBackgroud = Color.white.opacity(0.9)
     // 腾讯视频卡片圆角偏小
     static let cardRadius: CGFloat = 10
-    static let glassRadius: CGFloat = 16
+    static let glassRadius: CGFloat = 12
 }
 
 // MARK: - 通知（跨页面切换等）

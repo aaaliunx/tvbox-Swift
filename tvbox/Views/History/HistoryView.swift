@@ -60,7 +60,7 @@ struct HistoryView: View {
                 }
             }
         }
-        .background(Color(red: 0.08, green: 0.08, blue: 0.1))
+        .background(AppTheme.pageBackground)
         .navigationTitle("历史记录")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
@@ -110,7 +110,7 @@ struct HistoryView: View {
                 if !item.playNote.isEmpty {
                     Text(item.playNote)
                         .font(.system(size: 9))
-                        .foregroundColor(.white)
+                        .foregroundColor(AppTheme.textPrimary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
                         .background(Color.black.opacity(0.7))
@@ -121,7 +121,7 @@ struct HistoryView: View {
             
             Text(item.vodName)
                 .font(.caption)
-                .foregroundColor(.white)
+                .foregroundColor(AppTheme.textPrimary)
                 .lineLimit(2)
             
             Text(item.updateTime.displayString)

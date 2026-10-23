@@ -33,7 +33,8 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             networkStatusBanner
         }
-        .preferredColorScheme(.dark)
+        // 腾讯视频 iOS 式浅色界面（播放器内部自绘深色，不受影响）。
+        .preferredColorScheme(.light)
         .onAppear {
             // 自动加载已保存的配置
             let defaults = UserDefaults.standard
@@ -75,7 +76,7 @@ struct ContentView: View {
     
     // MARK: - 主界面
     
-    /// 主体导航容器：iOS 使用 TabView，macOS 使用 NavigationSplitView。
+    /// 主体导航容器：iOS 使用 TabView（腾讯视频式 5 Tab），macOS 使用 NavigationSplitView。
     private var mainTabView: some View {
         #if os(iOS)
         TabView(selection: $selectedTab) {
@@ -85,33 +86,39 @@ struct ContentView: View {
                 }
                 .tag(0)
             
+            ShortDramaView()
+                .tabItem {
+                    Label("短剧", systemImage: "film.stack.fill")
+                }
+                .tag(1)
+            
             LiveView(onExit: {
                 selectedTab = 0
             })
                 .tabItem {
                     Label("直播", systemImage: "tv.fill")
                 }
-                .tag(1)
+                .tag(2)
             
             SearchView()
                 .tabItem {
                     Label("搜索", systemImage: "magnifyingglass")
                 }
-                .tag(2)
+                .tag(3)
             
             ProfileView()
                 .tabItem {
-                    Label("个人中心", systemImage: "person.fill")
+                    Label("我的", systemImage: "person.fill")
                 }
-                .tag(3)
+                .tag(4)
         }
         .tint(.orange)
         .onChange(of: selectedTab) { _, _ in
             HapticManager.shared.selection()
         }
-        // 首页搜索入口：收到通知切到"搜索"Tab。
+        // 首页/短剧页搜索入口：收到通知切到"搜索"Tab。
         .onReceive(NotificationCenter.default.publisher(for: .switchToSearchTab)) { _ in
-            selectedTab = 2
+            selectedTab = 3
         }
         #else
         NavigationSplitView(columnVisibility: $appState.splitViewVisibility) {
@@ -204,12 +211,12 @@ struct ContentView: View {
                         VStack(spacing: 8) {
                             Text("TVBox")
                                 .font(.system(size: 48, weight: .heavy, design: .rounded))
-                                .foregroundColor(.white)
+                                .foregroundColor(AppTheme.textPrimary)
                                 .tracking(2)
                             
                             Text("极致视听 · 简洁至上")
                                 .font(.subheadline)
-                                .foregroundColor(.white.opacity(0.6))
+                                .foregroundColor(AppTheme.textSecondary)
                                 .tracking(4)
                         }
                     }
@@ -220,7 +227,7 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("接口配置")
                                 .font(.headline)
-                                .foregroundColor(.white)
+                                .foregroundColor(AppTheme.textPrimary)
                                 .padding(.leading, 4)
                             
                             HStack {
@@ -228,7 +235,7 @@ struct ContentView: View {
                                     .foregroundColor(.orange)
                                 TextField("请输入点播接口地址 (URL)", text: $settingsVM.vodApiUrl)
                                     .textFieldStyle(.plain)
-                                    .foregroundColor(.white)
+                                    .foregroundColor(AppTheme.textPrimary)
                                     .onTapGesture {
                                         setupInputTarget = .vod
                                     }
@@ -255,7 +262,7 @@ struct ContentView: View {
                                     .foregroundColor(.orange)
                                 TextField("请输入直播接口地址 (URL，可留空跟随点播)", text: $settingsVM.liveApiUrl)
                                     .textFieldStyle(.plain)
-                                    .foregroundColor(.white)
+                                    .foregroundColor(AppTheme.textPrimary)
                                     .onTapGesture {
                                         setupInputTarget = .live
                                     }
@@ -314,7 +321,7 @@ struct ContentView: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("最近使用")
                                     .font(.caption)
-                                    .foregroundColor(.white.opacity(0.5))
+                                    .foregroundColor(AppTheme.textSecondary)
                                     .padding(.horizontal, 4)
                                 
                                 ForEach(settingsVM.apiHistory.prefix(3), id: \.self) { url in
@@ -338,7 +345,7 @@ struct ContentView: View {
                                         }
                                         .padding(.vertical, 10)
                                         .padding(.horizontal, 16)
-                                        .foregroundColor(.white.opacity(0.7))
+                                        .foregroundColor(AppTheme.textPrimary)
                                         .glassCard(cornerRadius: 10)
                                     }
                                     .buttonStyle(.plain)

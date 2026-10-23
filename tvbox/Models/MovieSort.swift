@@ -22,10 +22,10 @@ struct MovieSort: Codable {
             self.flag = flag
         }
         
-        /// 生成首页推荐占位分类。
-        /// 该分类不走常规分类接口，直接渲染首页推荐列表。
+        /// 生成首页推荐占位分类（腾讯视频式：首页频道）。
+        /// 该分类不走常规分类接口，直接渲染首页推荐流。
         static func home() -> SortData {
-            SortData(id: "home", name: "推荐", flag: "1")
+            SortData(id: "home", name: "首页", flag: "1")
         }
     }
     

@@ -2,6 +2,13 @@ import Foundation
 import SwiftUI
 import Combine
 
+/// 首页分组横滑数据（腾讯视频式首页分区）。
+struct HomeSectionGroup: Identifiable {
+    let id: String
+    let title: String
+    var videos: [Movie.Video]
+}
+
 /// 首页 ViewModel
 @MainActor
 class HomeViewModel: ObservableObject {
@@ -13,6 +20,10 @@ class HomeViewModel: ObservableObject {
     @Published var homeVideos: [Movie.Video] = []
     /// 普通分类的视频列表（分页加载）。
     @Published var categoryVideos: [Movie.Video] = []
+    /// 首页 tab 的分组横滑数据（腾讯视频式"最近在看/上新"分区）。
+    @Published var homeSections: [HomeSectionGroup] = []
+    /// 首页 tab 分组加载状态。
+    @Published var isLoadingSections = false
     /// 页面加载状态（分类加载与分页共用）。
     @Published var isLoading = false
     /// 当前分类的分页页码。
@@ -29,6 +40,8 @@ class HomeViewModel: ObservableObject {
     /// 标记上次加载是否因网络错误失败（用于网络恢复自动重试）。
     private var lastLoadFailedDueToNetwork = false
     private var networkRestoredCancellable: AnyCancellable?
+    /// 首页分组是否已加载（避免每次切回首页重复拉取）。
+    private var sectionsLoaded = false
     
     init() {
         setupNetworkRestoredAutoRetry()
@@ -60,6 +73,47 @@ class HomeViewModel: ObservableObject {
         }
         
         isLoading = false
+    }
+    
+    /// 加载首页 tab 的分组横滑内容（腾讯视频式：并发拉取前几个真实分类各一页）。
+    func loadHomeSections() async {
+        guard !sectionsLoaded, let source = ApiConfig.shared.homeSourceBean else { return }
+        sectionsLoaded = true
+        isLoadingSections = true
+        defer { isLoadingSections = false }
+        
+        // 在 MainActor 上下文先取出快照（TaskGroup 闭包不能访问 MainActor 隔离属性）。
+        let categories = sorts.filter { $0.id != "home" }.prefix(6)
+        guard !categories.isEmpty else { return }
+        
+        let groups = await withTaskGroup(of: HomeSectionGroup?.self) { group in
+            for sort in categories {
+                group.addTask {
+                    guard let videos = try? await SourceService.shared.getList(
+                        sourceBean: source,
+                        sortData: sort,
+                        page: 1,
+                        filters: nil
+                    ), !videos.isEmpty else { return nil }
+                    return HomeSectionGroup(id: sort.id, title: sort.name, videos: Array(videos.prefix(10)))
+                }
+            }
+            var result: [HomeSectionGroup] = []
+            for await item in group {
+                if let item {
+                    result.append(item)
+                }
+            }
+            return result
+        }
+        homeSections = groups
+    }
+    
+    /// 重新加载首页分组（下拉刷新时）。
+    func reloadHomeSections() async {
+        sectionsLoaded = false
+        homeSections = []
+        await loadHomeSections()
     }
     
     /// 网络恢复时，若上次因网络错误导致首页为空，自动重新加载。

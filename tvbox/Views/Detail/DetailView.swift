@@ -248,7 +248,7 @@ struct DetailView: View {
             CachedAsyncImage(url: URL.posterURL(from: video.pic)) { image in
                 image.resizable().aspectRatio(2/3, contentMode: .fit)
             } placeholder: {
-                Color.white.opacity(0.05)
+                AppTheme.divider
                     .aspectRatio(2/3, contentMode: .fit)
             }
             .frame(maxHeight: posterHeight)
@@ -288,8 +288,8 @@ struct DetailView: View {
             image.resizable().aspectRatio(2/3, contentMode: .fill)
         } placeholder: {
             ZStack {
-                Color.white.opacity(0.05)
-                Image(systemName: "film.fill").foregroundColor(.white.opacity(0.2))
+                AppTheme.divider
+                Image(systemName: "film.fill").foregroundColor(AppTheme.textSecondary.opacity(0.5))
             }
             .aspectRatio(2/3, contentMode: .fill)
         }
@@ -303,7 +303,7 @@ struct DetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(viewModel.vodInfo?.name ?? video.name)
                 .font(.system(size: 24, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(AppTheme.textPrimary)
             
             if let info = viewModel.vodInfo {
                 VStack(alignment: .leading, spacing: 6) {
@@ -358,7 +358,7 @@ struct DetailView: View {
                 Text(isCollected ? "已收藏" : "收藏")
             }
             .font(.system(size: 15, weight: .semibold))
-            .foregroundColor(.white)
+            .foregroundColor(AppTheme.textPrimary)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .background(
@@ -366,14 +366,14 @@ struct DetailView: View {
                     if isCollected {
                         AppTheme.accentGradient
                     } else {
-                        Color.white.opacity(0.08)
+                        Color.white
                     }
                 }
             )
             .clipShape(Capsule())
             .overlay(
                 Capsule()
-                    .stroke(Color.white.opacity(isCollected ? 0 : 0.2), lineWidth: 1)
+                    .stroke(AppTheme.divider, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -389,7 +389,7 @@ struct DetailView: View {
                     .frame(width: 36, alignment: .leading)
                 Text(value)
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(AppTheme.textSecondary)
                     .lineLimit(2)
             }
         }
@@ -402,7 +402,7 @@ struct DetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("播放线路")
                 .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(AppTheme.textPrimary)
             
             flagScrollView
         }
@@ -433,7 +433,7 @@ struct DetailView: View {
         } label: {
             Text(flag)
                 .font(.system(size: 14, weight: viewModel.selectedFlag == flag ? .bold : .medium))
-                .foregroundColor(viewModel.selectedFlag == flag ? .white : .white.opacity(0.6))
+                .foregroundColor(viewModel.selectedFlag == flag ? .orange : AppTheme.textSecondary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(
@@ -441,7 +441,7 @@ struct DetailView: View {
                         if viewModel.selectedFlag == flag {
                             AppTheme.accentGradient
                         } else {
-                            Color.white.opacity(0.05)
+                            AppTheme.divider
                         }
                     }
                 )
@@ -457,7 +457,7 @@ struct DetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("视频清晰度")
                 .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(AppTheme.textPrimary)
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -483,7 +483,7 @@ struct DetailView: View {
         } label: {
             Text(option.name)
                 .font(.system(size: 14, weight: viewModel.selectedQualityId == option.id ? .bold : .medium))
-                .foregroundColor(viewModel.selectedQualityId == option.id ? .white : .white.opacity(0.6))
+                .foregroundColor(viewModel.selectedQualityId == option.id ? .orange : AppTheme.textSecondary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(
@@ -491,7 +491,7 @@ struct DetailView: View {
                         if viewModel.selectedQualityId == option.id {
                             AppTheme.accentGradient
                         } else {
-                            Color.white.opacity(0.05)
+                            AppTheme.divider
                         }
                     }
                 )
@@ -506,7 +506,7 @@ struct DetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("选集播放")
                 .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(AppTheme.textPrimary)
                 .padding(.horizontal, 20)
             
             EpisodeListView(
@@ -528,11 +528,11 @@ struct DetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("影片简介")
                 .font(.system(size: 16, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(AppTheme.textPrimary)
             
             Text(des)
                 .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(AppTheme.textSecondary)
                 .lineSpacing(4)
                 .lineLimit(nil)
         }
@@ -905,7 +905,7 @@ struct FullScreenPlayerView: View {
             if let osdText {
                 Text(osdText)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(AppTheme.textPrimary)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
                     .background(.ultraThinMaterial)
@@ -926,7 +926,7 @@ struct FullScreenPlayerView: View {
                     } label: {
                         Image(systemName: isFullScreenPlaying ? "pause.fill" : "play.fill")
                             .font(.title3)
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(AppTheme.textSecondary)
                     }
                     Button {
                         showControls()
@@ -934,7 +934,7 @@ struct FullScreenPlayerView: View {
                     } label: {
                         Image(systemName: "rectangle.landscape.rotate")
                             .font(.title3)
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(AppTheme.textSecondary)
                     }
                     #endif
                     Button {
@@ -942,7 +942,7 @@ struct FullScreenPlayerView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.title2)
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(AppTheme.textSecondary)
                     }
                 }
                 .padding(.horizontal, 18)

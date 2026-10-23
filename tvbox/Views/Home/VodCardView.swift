@@ -1,9 +1,8 @@
 import SwiftUI
 
-// MARK: - VodCard Press Style (iOS only)
+// MARK: - VodCard Press Style
 
-#if os(iOS)
-/// 按压缩放动画样式 - 为 VodCard 提供触觉反馈式的按压效果
+/// 按压缩放动画样式 - 为 VodCard 提供按压反馈效果
 struct VodCardPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -11,7 +10,6 @@ struct VodCardPressStyle: ButtonStyle {
             .animation(.easeInOut(duration: 0.15), value: configuration.isPressed)
     }
 }
-#endif
 
 /// 视频卡片组件
 struct VodCardView: View {
@@ -71,13 +69,13 @@ struct VodCardView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(video.name)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(AppTheme.textPrimary)
                     .lineLimit(1)
                 
                 if !video.type.isEmpty {
                     Text(video.type)
                         .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(AppTheme.textSecondary)
                         .lineLimit(1)
                 }
             }
@@ -92,12 +90,12 @@ struct VodCardView: View {
     /// 海报占位图，避免图片加载失败导致卡片高度塌陷。
     private var placeholderImage: some View {
         RoundedRectangle(cornerRadius: AppTheme.cardRadius)
-            .fill(Color.white.opacity(0.05))
+            .fill(AppTheme.divider)
             .aspectRatio(2/3, contentMode: .fill)
             .overlay(
                 Image(systemName: "film.fill")
                     .font(.system(size: 30))
-                    .foregroundColor(.white.opacity(0.2))
+                    .foregroundColor(AppTheme.textSecondary.opacity(0.5))
             )
     }
 }

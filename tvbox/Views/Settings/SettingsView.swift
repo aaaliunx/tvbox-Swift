@@ -93,7 +93,7 @@ struct SettingsView: View {
                             editingApiType = .vod
                             showApiInput = true
                         }
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         SettingsRow(
                             icon: "tv",
                             title: "直播接口地址",
@@ -102,14 +102,14 @@ struct SettingsView: View {
                             editingApiType = .live
                             showApiInput = true
                         }
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         if !apiConfig.sourceBeanList.isEmpty {
                             NavigationLink {
                                 sourcePickerView
                             } label: {
                                 SettingsRow(icon: "server.rack", title: "主页数据源", value: apiConfig.homeSourceBean?.name ?? "", action: nil)
                             }
-                            Divider().background(Color.white.opacity(0.1))
+                            Divider()
                             // 源站点检测：失效站点自动屏蔽，搜索/列表自动跳过。
                             SettingsRow(
                                 icon: "antenna.radiowaves.left.and.right",
@@ -135,38 +135,38 @@ struct SettingsView: View {
                                 showingPicker = .vodPlayer
                             }
                         }
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         SettingsRow(icon: "dot.radiowaves.left.and.right", title: "直播播放器", value: viewModel.livePlayerEngine.title) {
                             if viewModel.playerEngineOptions.count > 1 {
                                 showingPicker = .livePlayer
                             }
                         }
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         // 直播自动换线：关闭后播放失败只提示，不再自动切换线路（避免正常直播突然换源）。
                         SettingsRow(icon: "arrow.triangle.2.circlepath", title: "直播自动换线", value: viewModel.liveAutoSwitchLine ? "开启" : "关闭") {
                             viewModel.liveAutoSwitchLine.toggle()
                             UserDefaults.standard.set(viewModel.liveAutoSwitchLine, forKey: HawkConfig.LIVE_AUTO_SWITCH_LINE)
                         }
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         SettingsRow(icon: "cpu", title: "视频解码", value: viewModel.decodeMode.title) {
                             showingPicker = .decode
                         }
                         if PlayerEngine.isVLCAvailable {
-                            Divider().background(Color.white.opacity(0.1))
+                            Divider()
                             SettingsRow(icon: "externaldrive.badge.wifi", title: "VLC缓冲", value: viewModel.vlcBufferMode.title) {
                                 showingPicker = .vlcBuffer
                             }
                         }
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         SettingsRow(icon: "forward", title: "快进步长", value: "\(viewModel.playTimeStep)秒") {
                             showingPicker = .playTimeStep
                         }
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         SettingsRow(icon: "rectangle.dashed", title: "画面缩放", value: viewModel.playScale.rawValue) {
                             showingPicker = .playScale
                         }
                         if PlayerEngine.isVLCAvailable {
-                            Divider().background(Color.white.opacity(0.1))
+                            Divider()
                             SettingsRow(icon: "wand.and.stars", title: "M3U8净化", value: viewModel.m3u8Clean ? "开启" : "关闭") {
                                 viewModel.m3u8Clean.toggle()
                                 UserDefaults.standard.set(viewModel.m3u8Clean, forKey: HawkConfig.M3U8_CLEAN)
@@ -179,13 +179,13 @@ struct SettingsView: View {
                         SettingsRow(icon: "list.number", title: "历史条数", value: "\(viewModel.historyLimit)条") {
                             showingPicker = .historyLimit
                         }
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         NavigationLink {
                             HistoryView()
                         } label: {
                             SettingsRow(icon: "clock", title: "播放历史", value: "", action: nil)
                         }
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         NavigationLink {
                             FavoritesView()
                         } label: {
@@ -203,11 +203,11 @@ struct SettingsView: View {
                             }
                         }
                         if remoteControl.isRunning, !remoteControl.accessURL.isEmpty {
-                            Divider().background(Color.white.opacity(0.1))
+                            Divider()
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("访问地址（同一 Wi-Fi 下用浏览器打开）")
                                     .font(.system(size: 11))
-                                    .foregroundColor(.white.opacity(0.5))
+                                    .foregroundColor(AppTheme.textSecondary)
                                 Text(remoteControl.accessURL)
                                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
                                     .foregroundColor(.orange)
@@ -229,12 +229,12 @@ struct SettingsView: View {
                             }
                         }
                         if let backupExportURL {
-                            Divider().background(Color.white.opacity(0.1))
+                            Divider()
                             ShareLink(item: backupExportURL) {
                                 SettingsRow(icon: "square.and.arrow.up.circle", title: "分享备份文件", value: "", action: nil)
                             }
                         }
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         SettingsRow(icon: "square.and.arrow.down", title: "导入配置", value: "") {
                             showImportImporter = true
                         }
@@ -250,11 +250,11 @@ struct SettingsView: View {
                     // 关于
                     SectionCard(title: "关于") {
                         SettingsRow(icon: "info.circle", title: "版本", value: "1.0.0", action: nil)
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         SettingsRow(icon: "globe", title: "站点数量", value: "\(apiConfig.sourceBeanList.count)", action: nil)
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         SettingsRow(icon: "wand.and.stars", title: "解析数量", value: "\(apiConfig.parseBeanList.count)", action: nil)
-                        Divider().background(Color.white.opacity(0.1))
+                        Divider()
                         SettingsRow(icon: "tv", title: "直播分组", value: "\(apiConfig.liveChannelGroupList.count)", action: nil)
                     }
                 }
@@ -599,7 +599,7 @@ struct SettingsView: View {
                                     HStack(spacing: 8) {
                                         Text(source.name)
                                             .font(.system(size: 16, weight: .semibold))
-                                            .foregroundColor(source.isSupportedInSwift ? .white : .white.opacity(0.5))
+                                            .foregroundColor(source.isSupportedInSwift ? AppTheme.textPrimary : AppTheme.textSecondary)
                                         
                                         // 类型标签
                                         Text(source.typeDescription)
@@ -627,7 +627,7 @@ struct SettingsView: View {
                                     
                                     Text(source.api)
                                         .font(.system(size: 12))
-                                        .foregroundColor(.white.opacity(0.5))
+                                        .foregroundColor(AppTheme.textSecondary)
                                         .lineLimit(1)
                                 }
                                 
@@ -646,7 +646,7 @@ struct SettingsView: View {
                                             .foregroundColor(.orange)
                                     } else {
                                         Circle()
-                                            .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                                            .strokeBorder(AppTheme.divider, lineWidth: 1)
                                             .frame(width: 20, height: 20)
                                     }
                                 }
@@ -687,7 +687,7 @@ struct SectionCard<Content: View>: View {
             Text(title)
                 .font(.subheadline)
                 .fontWeight(.bold)
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(AppTheme.textSecondary)
                 .padding(.leading, 8)
             
             VStack(spacing: 0) {
@@ -726,18 +726,18 @@ struct SettingsRow: View {
             
             Text(title)
                 .font(.body)
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundColor(AppTheme.textPrimary)
             
             Spacer()
             
             Text(value)
                 .font(.subheadline)
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(AppTheme.textSecondary)
                 .lineLimit(1)
             
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .bold))
-                .foregroundColor(.white.opacity(0.3))
+                .foregroundColor(AppTheme.textSecondary.opacity(0.7))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)

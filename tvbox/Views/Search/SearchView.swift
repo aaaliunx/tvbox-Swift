@@ -54,7 +54,7 @@ struct SearchView: View {
                     Spacer()
                 }
             }
-            .background(Color(red: 0.08, green: 0.08, blue: 0.1))
+            .background(AppTheme.pageBackground)
             .navigationTitle("搜索")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -70,12 +70,12 @@ struct SearchView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(AppTheme.textSecondary)
                 
                 TextField("搜索影片...", text: $viewModel.keyword)
                     .textFieldStyle(.plain)
                     .font(.system(size: 16))
-                    .foregroundColor(.white)
+                    .foregroundColor(AppTheme.textPrimary)
                     .submitLabel(.search)
                     .focused($searchFocused)
                     .onSubmit {
@@ -96,15 +96,18 @@ struct SearchView: View {
                         }
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundColor(AppTheme.textSecondary)
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color.white.opacity(0.08))
+            .background(Color.white)
             .cornerRadius(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10).stroke(AppTheme.divider, lineWidth: 1)
+            )
             
             Button {
                 searchFocused = false
@@ -137,7 +140,7 @@ struct SearchView: View {
                         HStack {
                             Text("搜索历史")
                                 .font(.headline)
-                                .foregroundColor(.white)
+                                .foregroundColor(AppTheme.textPrimary)
                             Spacer()
                             Button {
                                 viewModel.clearHistory()
@@ -160,11 +163,14 @@ struct SearchView: View {
                                 } label: {
                                     Text(keyword)
                                         .font(.subheadline)
-                                        .foregroundColor(.white.opacity(0.8))
+                                        .foregroundColor(AppTheme.textPrimary)
                                         .padding(.horizontal, 14)
                                         .padding(.vertical, 7)
-                                        .background(Color.white.opacity(0.08))
+                                        .background(Color.white)
                                         .cornerRadius(16)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 16).stroke(AppTheme.divider, lineWidth: 1)
+                                        )
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -180,7 +186,7 @@ struct SearchView: View {
                             .foregroundColor(.orange)
                         Text("大家都在搜")
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundColor(AppTheme.textPrimary)
                     }
                     
                     FlowLayout(spacing: 8) {
@@ -224,7 +230,7 @@ struct SearchView: View {
                         } label: {
                             Text(type)
                                 .font(.system(size: 13, weight: viewModel.filterType == type ? .bold : .regular))
-                                .foregroundColor(viewModel.filterType == type ? .orange : .white.opacity(0.6))
+                                .foregroundColor(viewModel.filterType == type ? .orange : AppTheme.textSecondary)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 6)
                                 .background(viewModel.filterType == type ? Color.orange.opacity(0.15) : Color.clear)
