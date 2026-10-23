@@ -1016,6 +1016,8 @@ struct LiveFullScreenPlayerView: View {
     @State private var playbackFailed = false
     @State private var fullFailObserver: NSObjectProtocol?
     @State private var fullFailItemObserver: NSKeyValueObservation?
+    /// 画中画（PiP）控制器：由全屏 AVPlayerViewController 暴露，供"画中画"按钮程序触发。
+    @State private var pipController: AVPictureInPictureController?
 
     var body: some View {
         ZStack {
@@ -1032,6 +1034,9 @@ struct LiveFullScreenPlayerView: View {
                             onViewAppeared: {
                                 // 播放控制器真正呈现后按视频方向设置朝向（比 SwiftUI onAppear 更可靠）。
                                 applyPlayerOrientation(player: systemPlayer)
+                            },
+                            onPipControllerReady: { controller in
+                                pipController = controller
                             }
                         )
                         .ignoresSafeArea()
@@ -1058,7 +1063,8 @@ struct LiveFullScreenPlayerView: View {
                     selectedGroupIndex: selectedGroupIndex,
                     onSelectGroup: { index in onSelectGroup?(index) },
                     isLive: true,
-                    keepControlsVisible: playbackFailed
+                    keepControlsVisible: playbackFailed,
+                    pipController: $pipController
                 )
                 // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
 

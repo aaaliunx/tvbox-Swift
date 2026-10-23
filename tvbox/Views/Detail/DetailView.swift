@@ -730,6 +730,8 @@ struct FullScreenPlayerView: View {
     @State private var playbackEndObserver: NSObjectProtocol?
     /// 左右横屏方向标记（用于旋转按钮切换 landscapeLeft/Right）。
     @State private var isLandscapeLeft = false
+    /// 画中画（PiP）控制器：由全屏 AVPlayerViewController 暴露，供"画中画"按钮程序触发。
+    @State private var pipController: AVPictureInPictureController?
     @AppStorage(HawkConfig.PLAY_TYPE_VOD) private var vodPlayTypeRaw = -1
     @AppStorage(HawkConfig.PLAY_TYPE) private var legacyPlayTypeRaw = PlayerEngine.system.rawValue
     
@@ -761,6 +763,9 @@ struct FullScreenPlayerView: View {
                         onViewAppeared: {
                             // 播放控制器真正呈现后按视频方向设置朝向（比 SwiftUI onAppear 更可靠）。
                             applyPlayerOrientation(player: player)
+                        },
+                        onPipControllerReady: { controller in
+                            pipController = controller
                         }
                     )
                     .ignoresSafeArea()
@@ -785,7 +790,8 @@ struct FullScreenPlayerView: View {
                     selectedEpisodeIndex: selectedEpisodeIndex,
                     onSelectEpisode: { index in
                         onSelectEpisode?(index)
-                    }
+                    },
+                    pipController: $pipController
                 )
                 // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
                 .onChange(of: urlString) { _, newURL in

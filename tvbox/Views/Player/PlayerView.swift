@@ -29,27 +29,39 @@ import AVKit
 /// 关闭系统控制条，画面由 AVPlayerViewController 渲染，
 /// 腾讯风格控制条以覆盖层形式叠放在内核之上（iOS 无 customOverlay API，
 /// 采用内核容器 + 一体覆盖控制条实现"控制条集成进播放器"）。
+/// 开启 allowsPictureInPicturePlayback 以支持画中画（PiP），
+/// 并通过 onPipControllerReady 把控制器暴露给自绘控制条（系统控制条隐藏时需程序触发 PiP）。
 struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     let player: AVPlayer?
     /// 播放控制器视图已加入窗口、转场基本完成后回调（用于方向强制落地）。
     var onViewAppeared: (() -> Void)? = nil
+    /// AVPlayerViewController 的 PiP 控制器就绪回调（iOS 15+ 通过 avPictureInPictureController 获取）。
+    var onPipControllerReady: ((AVPictureInPictureController?) -> Void)? = nil
 
     final class Coordinator {
         var onViewAppeared: (() -> Void)?
-        init(onViewAppeared: (() -> Void)?) {
+        var onPipControllerReady: ((AVPictureInPictureController?) -> Void)?
+        init(onViewAppeared: (() -> Void)?, onPipControllerReady: ((AVPictureInPictureController?) -> Void)?) {
             self.onViewAppeared = onViewAppeared
+            self.onPipControllerReady = onPipControllerReady
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onViewAppeared: onViewAppeared)
+        Coordinator(onViewAppeared: onViewAppeared, onPipControllerReady: onPipControllerReady)
     }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let vc = AVPlayerViewController()
         vc.player = player
         vc.showsPlaybackControls = false
-        vc.allowsPictureInPicturePlayback = false
+        // 开启画中画能力（配合 UIBackgroundModes audio，切后台也可自动进入 PiP）。
+        vc.allowsPictureInPicturePlayback = true
+        #if swift(>=5.5)
+        if #available(iOS 15.0, *) {
+            context.coordinator.onPipControllerReady?(vc.avPictureInPictureController)
+        }
+        #endif
         // 转场动画（约 0.4s）完成后通知 SwiftUI 侧做方向兜底，
         // 比 SwiftUI onAppear 更可靠（此时控制器已真实呈现在窗口上）。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -64,6 +76,12 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         }
         uiViewController.showsPlaybackControls = false
         context.coordinator.onViewAppeared = onViewAppeared
+        context.coordinator.onPipControllerReady = onPipControllerReady
+        #if swift(>=5.5)
+        if #available(iOS 15.0, *) {
+            context.coordinator.onPipControllerReady?(uiViewController.avPictureInPictureController)
+        }
+        #endif
     }
 }
 
@@ -268,6 +286,8 @@ struct TencentStylePlayerOverlay: View {
     var isLive: Bool = false
     /// 播放失败等场景下保持控制栏常显（不自动隐藏）。
     var keepControlsVisible: Bool = false
+    /// 画中画（PiP）控制器：由 AVPlayerViewController 暴露，供控制条"画中画"按钮程序触发。
+    @Binding var pipController: AVPictureInPictureController?
 
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -875,6 +895,24 @@ struct TencentStylePlayerOverlay: View {
                             }
                             .buttonStyle(.plain)
                         }
+
+                        // 画中画按钮（腾讯视频同款：缩小成系统小窗继续播放）
+                        Button {
+                            guard let pip = pipController,
+                                  AVPictureInPictureController.isPictureInPictureSupported() else {
+                                showOSD("此设备不支持画中画")
+                                return
+                            }
+                            pip.startPictureInPicture()
+                            // 进入 PiP 后退出全屏，系统小窗接管播放（可拖动/缩放）。
+                            onClose?()
+                        } label: {
+                            Image(systemName: "pip.enter")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(width: 34, height: 34)
+                        }
+                        .buttonStyle(.plain)
 
                         // 听视频按钮（腾讯"听剧"同款，仅点播；直播无进度概念且本就适合后台收听）
                         if !isLive {
