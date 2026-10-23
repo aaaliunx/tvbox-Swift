@@ -271,7 +271,7 @@ struct HomeView: View {
                     Spacer()
                 }
             } else if viewModel.selectedSort?.id == "home" {
-                // 首页频道：腾讯视频式（推荐横幅 + 热门推荐 + 分组横滑）
+                // 首页频道：腾讯视频式（推荐列表 + 分组横滑）
                 homeFeed
             } else {
                 // 分类频道页：2 列大卡网格
