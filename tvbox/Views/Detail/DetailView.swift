@@ -774,8 +774,10 @@ struct FullScreenPlayerView: View {
                         onViewControllerReady: { controller in
                             fullPlayerVC = controller
                         },
-                        // 听视频模式下关闭自动 PiP：切后台保持纯音频。
-                        allowsPiP: !listenMode
+                        // 听视频模式下关闭自动 PiP：切后台保持纯音频不弹小窗。
+                        allowsPiP: !listenMode,
+                        // 听视频模式解绑 VC 画面：独立 AVPlayer 后台播放，锁屏不暂停。
+                        attachPlayer: !listenMode
                     )
                     .ignoresSafeArea()
                 }
@@ -803,7 +805,8 @@ struct FullScreenPlayerView: View {
                     onRequestPip: {
                         #if os(iOS)
                         // 用播放器自带 PiP 控制器手动触发（与切后台自动 PiP 同源，避免外部控制器冲突）。
-                        if #available(iOS 15.0, *), let c = fullPlayerVC?.avPictureInPictureController {
+                        // selector 动态调用：编译期不依赖旧 SDK 的成员声明。
+                        if let c = fullPlayerVC?.pipControllerIfAvailable {
                             if c.isPictureInPicturePossible {
                                 c.startPictureInPicture()
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {

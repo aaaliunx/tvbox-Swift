@@ -1040,7 +1040,8 @@ struct LiveFullScreenPlayerView: View {
                             onViewControllerReady: { controller in
                                 fullPlayerVC = controller
                             },
-                            allowsPiP: !listenMode
+                            allowsPiP: !listenMode,
+                            attachPlayer: !listenMode
                         )
                         .ignoresSafeArea()
                     }
@@ -1070,7 +1071,8 @@ struct LiveFullScreenPlayerView: View {
                     onRequestPip: {
                         #if os(iOS)
                         // 用播放器自带 PiP 控制器手动触发（与切后台自动 PiP 同源）。
-                        if #available(iOS 15.0, *), let c = fullPlayerVC?.avPictureInPictureController {
+                        // selector 动态调用：编译期不依赖旧 SDK 的成员声明。
+                        if let c = fullPlayerVC?.pipControllerIfAvailable {
                             if c.isPictureInPicturePossible {
                                 c.startPictureInPicture()
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {

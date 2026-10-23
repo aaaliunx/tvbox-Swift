@@ -32,6 +32,8 @@ import AVKit
 /// 开启 allowsPictureInPicturePlayback 以支持画中画（PiP），
 /// 并把 AVPlayerViewController 自身暴露给上层：手动 PiP 用系统自带
 /// avPictureInPictureController 触发（与切后台自动 PiP 同源，无冲突）。
+/// 听视频模式下 attachPlayer=false：播放器与 VC 解绑为独立 AVPlayer 播放，
+/// 避免 VC 在 allowsPiP 关闭时切后台被系统暂停，实现纯音频后台/锁屏播放。
 struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     let player: AVPlayer?
     /// 播放控制器视图已加入窗口、转场基本完成后回调（用于方向强制落地）。
@@ -40,11 +42,14 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     var onViewControllerReady: ((AVPlayerViewController?) -> Void)? = nil
     /// 是否允许画中画（听视频模式下关闭，避免切后台自动弹出 PiP 小窗）。
     var allowsPiP: Bool = true
+    /// 是否把播放器挂到 VC 画面（听视频模式下为 false：黑屏纯音频，独立 AVPlayer 后台播放）。
+    var attachPlayer: Bool = true
 
     final class Coordinator {
         var onViewAppeared: (() -> Void)?
         var onViewControllerReady: ((AVPlayerViewController?) -> Void)?
         var allowsPiP: Bool = true
+        var attachPlayer: Bool = true
         init(onViewAppeared: (() -> Void)?, onViewControllerReady: ((AVPlayerViewController?) -> Void)?) {
             self.onViewAppeared = onViewAppeared
             self.onViewControllerReady = onViewControllerReady
@@ -71,16 +76,34 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: AVPlayerViewController, context: Context) {
-        if uiViewController.player !== player {
-            uiViewController.player = player
+        // 听视频模式下解绑 VC 画面（独立 AVPlayer 继续后台播放，切后台/锁屏不暂停）。
+        if attachPlayer {
+            if uiViewController.player !== player {
+                uiViewController.player = player
+            }
+        } else {
+            if uiViewController.player != nil {
+                uiViewController.player = nil
+            }
         }
         uiViewController.showsPlaybackControls = false
-        uiViewController.allowsPictureInPicturePlayback = context.coordinator.allowsPiP
+        uiViewController.allowsPictureInPicturePlayback = allowsPiP
         context.coordinator.onViewAppeared = onViewAppeared
         context.coordinator.onViewControllerReady = onViewControllerReady
         context.coordinator.allowsPiP = allowsPiP
-        uiViewController.allowsPictureInPicturePlayback = allowsPiP
+        context.coordinator.attachPlayer = attachPlayer
         context.coordinator.onViewControllerReady?(uiViewController)
+    }
+}
+
+/// 运行时获取 AVPlayerViewController 的系统自带 PiP 控制器（iOS 15+）。
+/// 用 selector 动态调用，避免旧 SDK 编译期没有 avPictureInPictureController 成员导致构建失败。
+extension AVPlayerViewController {
+    var pipControllerIfAvailable: AVPictureInPictureController? {
+        let sel = NSSelectorFromString("avPictureInPictureController")
+        guard responds(to: sel) else { return nil }
+        guard let unmanaged = perform(sel) else { return nil }
+        return unmanaged.takeUnretainedValue() as? AVPictureInPictureController
     }
 }
 
