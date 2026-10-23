@@ -104,6 +104,7 @@ struct DetailView: View {
             if showFullScreen, let url = viewModel.playUrl {
                 FullScreenPlayerView(
                     urlString: url,
+                    skipGroupKey: video.name,
                     title: video.name,
                     startPosition: viewModel.currentPlaybackSeconds(),
                     onProgressChanged: handlePlaybackProgress,
@@ -154,6 +155,7 @@ struct DetailView: View {
             if let url = viewModel.playUrl {
                 FullScreenPlayerView(
                     urlString: url,
+                    skipGroupKey: video.name,
                     title: video.name,
                     coverURL: video.pic,
                     startPosition: viewModel.currentPlaybackSeconds(),
@@ -197,6 +199,7 @@ struct DetailView: View {
         if !showFullScreen, !isFullScreenDismissing, viewModel.isPlaying, let url = viewModel.playUrl {
             PlayerView(
                 urlString: url,
+                skipGroupKey: video.name,
                 startPosition: viewModel.currentPlaybackSeconds(),
                 onProgressChanged: handlePlaybackProgress,
                 onPlaybackEnded: playNextEpisodeIfNeeded,
@@ -225,6 +228,7 @@ struct DetailView: View {
         if !showFullScreen, viewModel.isPlaying, let url = viewModel.playUrl {
             PlayerView(
                 urlString: url,
+                skipGroupKey: video.name,
                 startPosition: viewModel.currentPlaybackSeconds(),
                 onProgressChanged: handlePlaybackProgress,
                 onPlaybackEnded: playNextEpisodeIfNeeded,
@@ -715,6 +719,8 @@ struct DetailView: View {
 /// 全屏播放器
 struct FullScreenPlayerView: View {
     let urlString: String
+    /// 智能跳过片头片尾的整剧复用标识（同剧按剧名复用）。
+    var skipGroupKey: String? = nil
     /// 播放内容标题（腾讯风格顶部标题栏显示）。
     var title: String = ""
     /// 剧集封面地址（锁屏/控制中心"正在播放"卡片）。
@@ -860,8 +866,8 @@ struct FullScreenPlayerView: View {
         // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制目标朝向。
         .onAppear {
             showControls()
-            // 智能跳过片头片尾：按播放地址加载缓存或触发检测记录
-            SmartSkipController.shared.reset(forKey: urlString)
+            // 智能跳过片头片尾：整剧复用（同剧各集片头片尾一致），无剧标识时退化为单集 URL
+            SmartSkipController.shared.reset(forKey: skipGroupKey ?? urlString)
             bindPlaybackEndObserver()
             // 转场期间多次尝试，确保方向落地。
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {

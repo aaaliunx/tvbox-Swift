@@ -408,6 +408,8 @@ struct TencentStylePlayerOverlay: View {
     @State private var draggingSeconds: Double = 0
     @State private var rate: Float = 1.0
     @State private var showRateMenu = false
+    /// 跳过片头片尾二级菜单（记片头/跳片头/记片尾/跳片尾）。
+    @State private var showSkipMenu = false
     @State private var showEpisodePanel = false
     @State private var showSourcePanel = false
     @State private var showChannelPanel = false
@@ -856,6 +858,46 @@ struct TencentStylePlayerOverlay: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
+            // 跳过片头片尾二级菜单（点击"跳过"弹出：记片头/跳片头/记片尾/跳片尾）。
+            // 自动检测无结果时，用户可拖动进度条到片头结束/片尾开始处点"记片头/记片尾"手动标记，
+            // 记录按整部剧复用（同剧各集片头片尾一致），再次播放自动跳过。
+            if showSkipMenu {
+                VStack(spacing: 8) {
+                    Text("片头 \(skipIntroStatus)  ·  片尾 \(skipOutroStatus)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                    HStack(spacing: 8) {
+                        skipMenuItem("记片头") {
+                            let t = currentTime
+                            SmartSkipController.shared.markIntro(at: t)
+                            showOSD("已记录片头结束 " + formatTime(t))
+                        }
+                        skipMenuItem("跳片头") {
+                            let target = SmartSkipController.shared.introTarget
+                            seek(to: target)
+                            showOSD("已跳过片头")
+                        }
+                    }
+                    HStack(spacing: 8) {
+                        skipMenuItem("记片尾") {
+                            let t = currentTime
+                            SmartSkipController.shared.markOutro(at: t)
+                            showOSD("已记录片尾开始 " + formatTime(t))
+                        }
+                        skipMenuItem("跳片尾") {
+                            let target = SmartSkipController.shared.outroTarget(duration: duration)
+                            seek(to: target)
+                            showOSD("已跳至片尾")
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.55))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
             // 进度条行：当前时间 / 进度条 / 总时长
             HStack(spacing: 10) {
                 Text("\(formatTime(currentTime))/\(formatTime(duration))")
@@ -934,6 +976,7 @@ struct TencentStylePlayerOverlay: View {
                             showEpisodePanel = false
                             showSourcePanel = false
                             showRateMenu = false
+                            showSkipMenu = false
                         }
                     } label: {
                         HStack(spacing: 5) {
@@ -986,6 +1029,7 @@ struct TencentStylePlayerOverlay: View {
                                     showChannelPanel = false
                                     showSourcePanel = false
                                     showRateMenu = false
+                                    showSkipMenu = false
                                 }
                             } label: {
                                 Text("选集")
@@ -1008,6 +1052,7 @@ struct TencentStylePlayerOverlay: View {
                                     showChannelPanel = false
                                     showEpisodePanel = false
                                     showRateMenu = false
+                                    showSkipMenu = false
                                 }
                             } label: {
                                 Text("线路")
@@ -1030,6 +1075,7 @@ struct TencentStylePlayerOverlay: View {
                                     showChannelPanel = false
                                     showEpisodePanel = false
                                     showSourcePanel = false
+                                    showSkipMenu = false
                                 }
                             } label: {
                                 Text("倍速")
@@ -1044,74 +1090,27 @@ struct TencentStylePlayerOverlay: View {
                         }
 
                         // 跳过片头/片尾按钮（替代画中画按钮位置；PiP 能力保留，切后台仍自动进入小窗）。
-                        // 单击「记片头/记片尾」= 把当前播放位置记录为片头结束/片尾开始（自动检测无结果时手动标记，
-                        // 记录后同集再次播放自动复用）；单击「跳片头/跳片尾」= 跳到已记录的标记点（无记录时按默认 20s/结尾前 10s）。
+                        // 点击弹出二级菜单：记片头/跳片头/记片尾/跳片尾。
                         if !isLive {
-                            HStack(spacing: 8) {
-                                Button {
-                                    showControls()
-                                    let t = currentTime
-                                    SmartSkipController.shared.markIntro(at: t)
-                                    showOSD("已记录片头结束 " + formatTime(t))
-                                } label: {
-                                    Text("记片头")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 7)
-                                        .background(Color.white.opacity(0.15))
-                                        .clipShape(Capsule())
+                            Button {
+                                showControls()
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    showSkipMenu.toggle()
+                                    showRateMenu = false
+                                    showChannelPanel = false
+                                    showEpisodePanel = false
+                                    showSourcePanel = false
                                 }
-                                .buttonStyle(.plain)
-
-                                Button {
-                                    showControls()
-                                    let target = SmartSkipController.shared.introTarget
-                                    seek(to: target)
-                                    showOSD("已跳过片头")
-                                } label: {
-                                    Text("跳片头")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 7)
-                                        .background(Color.white.opacity(0.15))
-                                        .clipShape(Capsule())
-                                }
-                                .buttonStyle(.plain)
-
-                                Button {
-                                    showControls()
-                                    let t = currentTime
-                                    SmartSkipController.shared.markOutro(at: t)
-                                    showOSD("已记录片尾开始 " + formatTime(t))
-                                } label: {
-                                    Text("记片尾")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 7)
-                                        .background(Color.white.opacity(0.15))
-                                        .clipShape(Capsule())
-                                }
-                                .buttonStyle(.plain)
-
-                                Button {
-                                    showControls()
-                                    let target = SmartSkipController.shared.outroTarget(duration: duration)
-                                    seek(to: target)
-                                    showOSD("已跳至片尾")
-                                } label: {
-                                    Text("跳片尾")
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 7)
-                                        .background(Color.white.opacity(0.15))
-                                        .clipShape(Capsule())
-                                }
-                                .buttonStyle(.plain)
+                            } label: {
+                                Text("跳过")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(showSkipMenu ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
+                                    .clipShape(Capsule())
                             }
+                            .buttonStyle(.plain)
                         }
 
                         // 听视频按钮（腾讯"听剧"同款，仅点播；直播无进度概念且本就适合后台收听）
@@ -1412,6 +1411,34 @@ struct TencentStylePlayerOverlay: View {
         showOSD(formatTime(target))
     }
 
+    /// 二级菜单项（跳片头/记片头/跳片尾/记片尾）。
+    private func skipMenuItem(_ title: String, action: @escaping () -> Void) -> some View {
+        Button {
+            showControls()
+            withAnimation(.easeOut(duration: 0.2)) { showSkipMenu = false }
+            action()
+        } label: {
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.2))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 菜单状态文案：片头标记点 / 片尾标记点。
+    private var skipIntroStatus: String {
+        if let end = SmartSkipController.shared.introEnd { return formatTime(end) }
+        return SmartSkipController.shared.isAnalyzing ? "检测中…" : "未记录"
+    }
+    private var skipOutroStatus: String {
+        if let start = SmartSkipController.shared.outroStart { return formatTime(start) }
+        return SmartSkipController.shared.isAnalyzing ? "检测中…" : "未记录"
+    }
+
     private func setRate(_ r: Float) {
         guard let player else { return }
         rate = r
@@ -1597,6 +1624,8 @@ final class SystemPlayerSessionController: ObservableObject {
 /// 视频播放器组件 - 对应 Android 版 PlayFragment
 struct PlayerView: View {
     let urlString: String
+    /// 智能跳过片头片尾的整剧复用标识（同剧各集片头片尾一致，按剧名复用；为空则退化为单集 URL）。
+    var skipGroupKey: String? = nil
     var startPosition: Double = 0
     var onProgressChanged: ((Double, Double?) -> Void)? = nil
     var onPlaybackEnded: (() -> Void)? = nil
@@ -1628,6 +1657,7 @@ struct PlayerView: View {
             case .system:
                 AVPlayerContentView(
                     urlString: urlString,
+                    skipGroupKey: skipGroupKey,
                     startPosition: startPosition,
                     onProgressChanged: onProgressChanged,
                     onPlaybackEnded: onPlaybackEnded,
@@ -1675,6 +1705,8 @@ struct PlayerView: View {
 struct AVPlayerContentView: View {
     private static let supportedPlaybackRates: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
     let urlString: String
+    /// 智能跳过片头片尾的整剧复用标识（同剧按剧名复用；为空则退化为单集 URL）。
+    var skipGroupKey: String? = nil
     var startPosition: Double = 0
     var onProgressChanged: ((Double, Double?) -> Void)? = nil
     var onPlaybackEnded: (() -> Void)? = nil
@@ -1879,8 +1911,8 @@ struct AVPlayerContentView: View {
             applyPreferredPlaybackRate(to: sharedPlayer)
             bindPlayerObservers(for: sharedPlayer)
             reportProgress(for: sharedPlayer)
-            // 智能跳过片头片尾：按播放地址加载缓存或触发检测记录
-            SmartSkipController.shared.reset(forKey: urlString)
+            // 智能跳过片头片尾：整剧复用（同剧各集片头片尾一致），无剧标识时退化为单集 URL
+            SmartSkipController.shared.reset(forKey: skipGroupKey ?? urlString)
             return
         }
         
@@ -1901,8 +1933,8 @@ struct AVPlayerContentView: View {
         player = newPlayer
         bindPlayerObservers(for: newPlayer)
         startPlayback(for: newPlayer)
-        // 智能跳过片头片尾：按播放地址加载缓存或触发检测记录
-        SmartSkipController.shared.reset(forKey: urlString)
+        // 智能跳过片头片尾：整剧复用（同剧各集片头片尾一致），无剧标识时退化为单集 URL
+        SmartSkipController.shared.reset(forKey: skipGroupKey ?? urlString)
     }
     
     /// 将原始 URL 字符串转换为合法的 URL，处理未编码的特殊字符。
