@@ -107,6 +107,89 @@ extension AVPlayerViewController {
     }
 }
 
+/// 锁屏/控制中心"正在播放"信息与耳机线控管理。
+/// 后台/锁屏播放时向系统上报标题、封面、时长与进度，并响应远程播放控制命令。
+#if os(iOS)
+@MainActor
+final class NowPlayingManager {
+    static let shared = NowPlayingManager()
+
+    private var onPlayPause: (() -> Void)?
+    private var onSeek: ((Double) -> Void)?
+    private var onSkipForward: (() -> Void)?
+    private var onSkipBackward: (() -> Void)?
+
+    private init() {
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.addTarget { [weak self] _ in
+            self?.onPlayPause?(); return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            self?.onPlayPause?(); return .success
+        }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.onPlayPause?(); return .success
+        }
+        center.skipForwardCommand.preferredIntervals = [10]
+        center.skipForwardCommand.addTarget { [weak self] _ in
+            self?.onSkipForward?(); return .success
+        }
+        center.skipBackwardCommand.preferredIntervals = [10]
+        center.skipBackwardCommand.addTarget { [weak self] _ in
+            self?.onSkipBackward?(); return .success
+        }
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            if let e = event as? MPChangePlaybackPositionCommandEvent {
+                self?.onSeek?(e.positionTime)
+            }
+            return .success
+        }
+    }
+
+    /// 绑定当前播放器的控制闭包（每次进入播放器时刷新）。
+    func configure(
+        playPause: (() -> Void)?,
+        seek: ((Double) -> Void)?,
+        skipForward: (() -> Void)?,
+        skipBackward: (() -> Void)?
+    ) {
+        onPlayPause = playPause
+        onSeek = seek
+        onSkipForward = skipForward
+        onSkipBackward = skipBackward
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.isEnabled = true
+        center.pauseCommand.isEnabled = true
+        center.togglePlayPauseCommand.isEnabled = true
+        center.skipForwardCommand.isEnabled = skipForward != nil
+        center.skipBackwardCommand.isEnabled = skipBackward != nil
+        center.changePlaybackPositionCommand.isEnabled = seek != nil
+    }
+
+    /// 更新锁屏/控制中心媒体信息。
+    func update(title: String, subtitle: String, duration: Double, currentTime: Double, rate: Float, artwork: UIImage?) {
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: title,
+            MPMediaItemPropertyArtist: subtitle,
+            MPMediaItemPropertyPlaybackDuration: duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
+            MPNowPlayingInfoPropertyPlaybackRate: rate,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: rate
+        ]
+        if let artwork {
+            let art = MPMediaItemArtwork(boundsSize: artwork.size) { _ in artwork }
+            info[MPMediaItemPropertyArtwork] = art
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    /// 清空媒体信息（播放器退出时）。
+    func clear() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+}
+#endif
+
 import MediaPlayer
 
 /// 全屏页手势层：水平滑动快进/快退、左侧垂直滑动调亮度、右侧垂直滑动调音量、
@@ -312,6 +395,8 @@ struct TencentStylePlayerOverlay: View {
     var onRequestPip: (() -> Void)? = nil
     /// 听视频模式状态变化回调（上层据此开关播放器 allowsPiP，避免听剧时切后台弹 PiP 小窗）。
     var onListenModeChanged: ((Bool) -> Void)? = nil
+    /// 封面地址（用于锁屏/控制中心"正在播放"卡片与听剧界面展示）。
+    var coverURL: String? = nil
 
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -337,6 +422,10 @@ struct TencentStylePlayerOverlay: View {
     @State private var showLockHint = false
     /// 听视频模式（腾讯"听剧"同款：黑屏纯音频界面，切后台/锁屏继续播放）。
     @State private var listenMode = false
+    /// 锁屏/控制中心封面（从 coverURL 异步加载）。
+    #if os(iOS)
+    @State private var artworkImage: UIImage?
+    #endif
 
     private static let playbackRates: [Float] = [1.0, 1.25, 1.5, 2.0]
 
@@ -672,11 +761,33 @@ struct TencentStylePlayerOverlay: View {
         .onAppear {
             showControls()
             startProgressTimer()
+            #if os(iOS)
+            // 注册锁屏/控制中心远程控制命令（线控、锁屏播放/暂停/进度）。
+            NowPlayingManager.shared.configure(
+                playPause: { onPlayPause?() },
+                seek: { seek(to: $0) },
+                skipForward: { seekBy(10) },
+                skipBackward: { seekBy(-10) }
+            )
+            // 异步加载封面（用于锁屏"正在播放"卡片与听剧界面）。
+            if let coverURL, !coverURL.isEmpty, artworkImage == nil {
+                let urlString = coverURL
+                Task {
+                    guard let url = URL(string: urlString),
+                          let data = try? await URLSession.shared.data(from: url).0,
+                          let img = UIImage(data: data) else { return }
+                    await MainActor.run { artworkImage = img }
+                }
+            }
+            #endif
         }
         .onDisappear {
             hideControlsTask?.cancel()
             progressTimer?.invalidate()
             osdTimer?.invalidate()
+            #if os(iOS)
+            NowPlayingManager.shared.clear()
+            #endif
         }
     }
 
@@ -1165,6 +1276,17 @@ struct TencentStylePlayerOverlay: View {
                 if let d = player.currentItem?.duration.seconds, d.isFinite, d >= 0 {
                     duration = d
                 }
+                #if os(iOS)
+                // 同步锁屏/控制中心"正在播放"卡片（标题/封面/进度/倍速）。
+                NowPlayingManager.shared.update(
+                    title: title,
+                    subtitle: isLive ? "直播" : "听视频模式",
+                    duration: duration,
+                    currentTime: currentTime,
+                    rate: rate,
+                    artwork: artworkImage
+                )
+                #endif
             }
         }
     }

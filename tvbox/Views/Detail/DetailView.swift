@@ -791,6 +791,7 @@ struct FullScreenPlayerView: View {
                     onClose: { closeFullScreen() },
                     onLongPressBegan: { beginLongPressSpeed(player: systemController?.player) },
                     onLongPressEnded: { endLongPressSpeed(player: systemController?.player) },
+                    coverURL: video.pic,
                     sourceNames: sourceNames,
                     selectedSourceIndex: selectedSourceIndex,
                     onSelectSource: { index in

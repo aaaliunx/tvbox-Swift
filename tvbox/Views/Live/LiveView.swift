@@ -107,6 +107,7 @@ struct LiveView: View {
                 LiveFullScreenPlayerView(
                     urlString: viewModel.currentChannel?.currentUrl ?? "",
                     title: viewModel.currentChannel?.channelName ?? "",
+                    channelLogo: viewModel.currentChannel?.logo ?? "",
                     sharedController: livePlayerController,
                     systemPlayer: avPlayer,
                     useSystemEngine: selectedEngine == .system,
@@ -989,6 +990,8 @@ struct LiveFullScreenPlayerView: View {
     let urlString: String
     /// 频道名（腾讯风格顶部标题栏显示）。
     var title: String = ""
+    /// 频道台标（锁屏/控制中心"正在播放"封面）。
+    var channelLogo: String = ""
     /// 与直播页共用的 VLC 播放器实例。
     var sharedController: VLCPlayerController? = nil
     /// 系统播放器引擎时使用的 AVPlayer 实例（与直播页共用，不重新加载）。
@@ -1057,6 +1060,7 @@ struct LiveFullScreenPlayerView: View {
                     onClose: { dismiss() },
                     onLongPressBegan: { beginLiveLongPressSpeed() },
                     onLongPressEnded: { endLiveLongPressSpeed() },
+                    coverURL: channelLogo,
                     sourceNames: (0..<max(sourceNum, 1)).map { "线路\($0 + 1)" },
                     selectedSourceIndex: min(max(sourceIndex, 0), max(sourceNum - 1, 0)),
                     onSelectSource: { index in onSelectSource?(index) },
