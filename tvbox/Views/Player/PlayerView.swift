@@ -59,8 +59,9 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         vc.allowsPictureInPicturePlayback = true
         // 用传统 AVPictureInPictureController(playerLayer:) 构建 PiP 控制器：
         // 系统控制条隐藏后需程序触发 PiP，AVPlayerViewController 的 view.layer 即 AVPlayerLayer。
-        if let playerLayer = vc.view.layer as? AVPlayerLayer,
-           AVPictureInPictureController.isPictureInPictureSupported() {
+        // 不做 isPictureInPictureSupported 硬判断：部分容器/宿主环境下该 API 提前返回 false，
+        // 由调用侧尝试 startPictureInPicture 并在失败时保持现状。
+        if let playerLayer = vc.view.layer as? AVPlayerLayer {
             context.coordinator.onPipControllerReady?(AVPictureInPictureController(playerLayer: playerLayer))
         }
         // 转场动画（约 0.4s）完成后通知 SwiftUI 侧做方向兜底，
@@ -78,8 +79,7 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         uiViewController.showsPlaybackControls = false
         context.coordinator.onViewAppeared = onViewAppeared
         context.coordinator.onPipControllerReady = onPipControllerReady
-        if let playerLayer = uiViewController.view.layer as? AVPlayerLayer,
-           AVPictureInPictureController.isPictureInPictureSupported() {
+        if let playerLayer = uiViewController.view.layer as? AVPlayerLayer {
             context.coordinator.onPipControllerReady?(AVPictureInPictureController(playerLayer: playerLayer))
         }
     }
@@ -898,14 +898,20 @@ struct TencentStylePlayerOverlay: View {
 
                         // 画中画按钮（腾讯视频同款：缩小成系统小窗继续播放）
                         Button {
-                            guard let pip = pipController,
-                                  AVPictureInPictureController.isPictureInPictureSupported() else {
-                                showOSD("此设备不支持画中画")
+                            guard let pip = pipController else {
+                                showOSD("画中画不可用")
                                 return
                             }
+                            // 直接尝试启动（容器/宿主环境 isPictureInPictureSupported 可能提前返回 false）；
+                            // 仅当 PiP 真正激活（小窗出现）后才退出全屏，避免误退。
                             pip.startPictureInPicture()
-                            // 进入 PiP 后退出全屏，系统小窗接管播放（可拖动/缩放）。
-                            onClose?()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                if pip.isPictureInPictureActive {
+                                    onClose?()
+                                } else if !pip.isPictureInPicturePossible {
+                                    showOSD("画中画不可用")
+                                }
+                            }
                         } label: {
                             Image(systemName: "pip.enter")
                                 .font(.system(size: 16, weight: .medium))
