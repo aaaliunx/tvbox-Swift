@@ -385,7 +385,8 @@ struct TencentStylePlayerOverlay: View {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 20, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 36, height: 36)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
 
@@ -397,8 +398,9 @@ struct TencentStylePlayerOverlay: View {
 
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 4)
+                .padding(.horizontal, 12)
+                // 全屏容器 ignoresSafeArea 后手动避让灵动岛/状态栏，保证标题与返回键不被遮挡。
+                .safeAreaPadding(.top, 6)
                 .padding(.bottom, 10)
                 .background(
                     LinearGradient(
@@ -754,6 +756,8 @@ struct TencentStylePlayerOverlay: View {
         .foregroundColor(.white)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+        // 全屏容器 ignoresSafeArea 后手动避让底部 Home 指示条。
+        .safeAreaPadding(.bottom, 8)
         .background(
             LinearGradient(
                 colors: [.clear, .black.opacity(0.72)],

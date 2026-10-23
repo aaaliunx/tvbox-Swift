@@ -41,6 +41,8 @@ struct HomeView: View {
             if let first = viewModel.sorts.first {
                 viewModel.selectSort(first)
             }
+            // sorts 就绪后再加载首页分组（避免并发时 sorts 为空导致分组永不加载）。
+            await viewModel.loadHomeSections()
         }
     }
     
@@ -312,9 +314,6 @@ struct HomeView: View {
         .refreshable {
             await viewModel.refresh()
             await viewModel.reloadHomeSections()
-        }
-        .task {
-            await viewModel.loadHomeSections()
         }
     }
     

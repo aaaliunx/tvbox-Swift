@@ -78,13 +78,15 @@ class HomeViewModel: ObservableObject {
     /// 加载首页 tab 的分组横滑内容（腾讯视频式：并发拉取前几个真实分类各一页）。
     func loadHomeSections() async {
         guard !sectionsLoaded, let source = ApiConfig.shared.homeSourceBean else { return }
-        sectionsLoaded = true
-        isLoadingSections = true
-        defer { isLoadingSections = false }
         
         // 在 MainActor 上下文先取出快照（TaskGroup 闭包不能访问 MainActor 隔离属性）。
         let categories = sorts.filter { $0.id != "home" }.prefix(6)
+        // sorts 尚未就绪时不做"已加载"标记，稍后重试仍会拉取。
         guard !categories.isEmpty else { return }
+        
+        sectionsLoaded = true
+        isLoadingSections = true
+        defer { isLoadingSections = false }
         
         let groups = await withTaskGroup(of: HomeSectionGroup?.self) { group in
             for sort in categories {
