@@ -1016,8 +1016,10 @@ struct LiveFullScreenPlayerView: View {
     @State private var playbackFailed = false
     @State private var fullFailObserver: NSObjectProtocol?
     @State private var fullFailItemObserver: NSKeyValueObservation?
-    /// 画中画（PiP）控制器：由全屏 AVPlayerViewController 暴露，供"画中画"按钮程序触发。
-    @State private var pipController: AVPictureInPictureController?
+    /// 全屏播放器控制器（用于手动触发画中画，与切后台自动 PiP 同源）。
+    @State private var fullPlayerVC: AVPlayerViewController?
+    /// 听视频模式状态（直播无听剧入口，恒为 false）。
+    @State private var listenMode = false
 
     var body: some View {
         ZStack {
@@ -1035,9 +1037,10 @@ struct LiveFullScreenPlayerView: View {
                                 // 播放控制器真正呈现后按视频方向设置朝向（比 SwiftUI onAppear 更可靠）。
                                 applyPlayerOrientation(player: systemPlayer)
                             },
-                            onPipControllerReady: { controller in
-                                pipController = controller
-                            }
+                            onViewControllerReady: { controller in
+                                fullPlayerVC = controller
+                            },
+                            allowsPiP: !listenMode
                         )
                         .ignoresSafeArea()
                     }
@@ -1064,7 +1067,24 @@ struct LiveFullScreenPlayerView: View {
                     onSelectGroup: { index in onSelectGroup?(index) },
                     isLive: true,
                     keepControlsVisible: playbackFailed,
-                    pipController: $pipController
+                    onRequestPip: {
+                        #if os(iOS)
+                        // 用播放器自带 PiP 控制器手动触发（与切后台自动 PiP 同源）。
+                        if #available(iOS 15.0, *), let c = fullPlayerVC?.avPictureInPictureController {
+                            if c.isPictureInPicturePossible {
+                                c.startPictureInPicture()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                    if c.isPictureInPictureActive {
+                                        dismiss()
+                                    }
+                                }
+                            }
+                        }
+                        #endif
+                    },
+                    onListenModeChanged: { on in
+                        listenMode = on
+                    }
                 )
                 // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
 

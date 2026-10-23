@@ -30,40 +30,38 @@ import AVKit
 /// 腾讯风格控制条以覆盖层形式叠放在内核之上（iOS 无 customOverlay API，
 /// 采用内核容器 + 一体覆盖控制条实现"控制条集成进播放器"）。
 /// 开启 allowsPictureInPicturePlayback 以支持画中画（PiP），
-/// 并通过 onPipControllerReady 把控制器暴露给自绘控制条（系统控制条隐藏时需程序触发 PiP）。
+/// 并把 AVPlayerViewController 自身暴露给上层：手动 PiP 用系统自带
+/// avPictureInPictureController 触发（与切后台自动 PiP 同源，无冲突）。
 struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
     let player: AVPlayer?
     /// 播放控制器视图已加入窗口、转场基本完成后回调（用于方向强制落地）。
     var onViewAppeared: (() -> Void)? = nil
-    /// AVPlayerViewController 的 PiP 控制器就绪回调（iOS 15+ 通过 avPictureInPictureController 获取）。
-    var onPipControllerReady: ((AVPictureInPictureController?) -> Void)? = nil
+    /// AVPlayerViewController 就绪回调（用于手动触发画中画等）。
+    var onViewControllerReady: ((AVPlayerViewController?) -> Void)? = nil
+    /// 是否允许画中画（听视频模式下关闭，避免切后台自动弹出 PiP 小窗）。
+    var allowsPiP: Bool = true
 
     final class Coordinator {
         var onViewAppeared: (() -> Void)?
-        var onPipControllerReady: ((AVPictureInPictureController?) -> Void)?
-        init(onViewAppeared: (() -> Void)?, onPipControllerReady: ((AVPictureInPictureController?) -> Void)?) {
+        var onViewControllerReady: ((AVPlayerViewController?) -> Void)?
+        var allowsPiP: Bool = true
+        init(onViewAppeared: (() -> Void)?, onViewControllerReady: ((AVPlayerViewController?) -> Void)?) {
             self.onViewAppeared = onViewAppeared
-            self.onPipControllerReady = onPipControllerReady
+            self.onViewControllerReady = onViewControllerReady
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onViewAppeared: onViewAppeared, onPipControllerReady: onPipControllerReady)
+        Coordinator(onViewAppeared: onViewAppeared, onViewControllerReady: onViewControllerReady)
     }
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let vc = AVPlayerViewController()
         vc.player = player
         vc.showsPlaybackControls = false
-        // 开启画中画能力（配合 UIBackgroundModes audio，切后台也可自动进入 PiP）。
-        vc.allowsPictureInPicturePlayback = true
-        // 用传统 AVPictureInPictureController(playerLayer:) 构建 PiP 控制器：
-        // 系统控制条隐藏后需程序触发 PiP，AVPlayerViewController 的 view.layer 即 AVPlayerLayer。
-        // 不做 isPictureInPictureSupported 硬判断：部分容器/宿主环境下该 API 提前返回 false，
-        // 由调用侧尝试 startPictureInPicture 并在失败时保持现状。
-        if let playerLayer = vc.view.layer as? AVPlayerLayer {
-            context.coordinator.onPipControllerReady?(AVPictureInPictureController(playerLayer: playerLayer))
-        }
+        // 开启画中画能力（配合 UIBackgroundModes audio，切后台可自动进入 PiP）。
+        vc.allowsPictureInPicturePlayback = context.coordinator.allowsPiP
+        context.coordinator.onViewControllerReady?(vc)
         // 转场动画（约 0.4s）完成后通知 SwiftUI 侧做方向兜底，
         // 比 SwiftUI onAppear 更可靠（此时控制器已真实呈现在窗口上）。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -77,11 +75,12 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
             uiViewController.player = player
         }
         uiViewController.showsPlaybackControls = false
+        uiViewController.allowsPictureInPicturePlayback = context.coordinator.allowsPiP
         context.coordinator.onViewAppeared = onViewAppeared
-        context.coordinator.onPipControllerReady = onPipControllerReady
-        if let playerLayer = uiViewController.view.layer as? AVPlayerLayer {
-            context.coordinator.onPipControllerReady?(AVPictureInPictureController(playerLayer: playerLayer))
-        }
+        context.coordinator.onViewControllerReady = onViewControllerReady
+        context.coordinator.allowsPiP = allowsPiP
+        uiViewController.allowsPictureInPicturePlayback = allowsPiP
+        context.coordinator.onViewControllerReady?(uiViewController)
     }
 }
 
@@ -286,8 +285,10 @@ struct TencentStylePlayerOverlay: View {
     var isLive: Bool = false
     /// 播放失败等场景下保持控制栏常显（不自动隐藏）。
     var keepControlsVisible: Bool = false
-    /// 画中画（PiP）控制器：由 AVPlayerViewController 暴露，供控制条"画中画"按钮程序触发。
-    @Binding var pipController: AVPictureInPictureController?
+    /// 请求启动画中画（由上层用播放器自带的 PiP 控制器触发，与切后台自动 PiP 同源）。
+    var onRequestPip: (() -> Void)? = nil
+    /// 听视频模式状态变化回调（上层据此开关播放器 allowsPiP，避免听剧时切后台弹 PiP 小窗）。
+    var onListenModeChanged: ((Bool) -> Void)? = nil
 
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -519,6 +520,7 @@ struct TencentStylePlayerOverlay: View {
                                     listenMode = false
                                     showControls()
                                 }
+                                onListenModeChanged?(false)
                             } label: {
                                 Image(systemName: "chevron.down")
                                     .font(.system(size: 20, weight: .semibold))
@@ -537,6 +539,7 @@ struct TencentStylePlayerOverlay: View {
                             Spacer()
 
                             Button {
+                                onListenModeChanged?(false)
                                 onClose?()
                             } label: {
                                 Image(systemName: "xmark")
@@ -898,20 +901,8 @@ struct TencentStylePlayerOverlay: View {
 
                         // 画中画按钮（腾讯视频同款：缩小成系统小窗继续播放）
                         Button {
-                            guard let pip = pipController else {
-                                showOSD("画中画不可用")
-                                return
-                            }
-                            // 直接尝试启动（容器/宿主环境 isPictureInPictureSupported 可能提前返回 false）；
-                            // 仅当 PiP 真正激活（小窗出现）后才退出全屏，避免误退。
-                            pip.startPictureInPicture()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                                if pip.isPictureInPictureActive {
-                                    onClose?()
-                                } else if !pip.isPictureInPicturePossible {
-                                    showOSD("画中画不可用")
-                                }
-                            }
+                            // 用播放器自带 PiP 控制器触发（与切后台自动 PiP 同源，避免外部控制器冲突）。
+                            onRequestPip?()
                         } label: {
                             Image(systemName: "pip.enter")
                                 .font(.system(size: 16, weight: .medium))
@@ -927,6 +918,7 @@ struct TencentStylePlayerOverlay: View {
                                 withAnimation(.easeOut(duration: 0.2)) {
                                     listenMode = true
                                 }
+                                onListenModeChanged?(true)
                             } label: {
                                 Image(systemName: "headphones")
                                     .font(.system(size: 16, weight: .medium))

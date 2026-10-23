@@ -733,8 +733,12 @@ struct FullScreenPlayerView: View {
     @State private var playbackEndObserver: NSObjectProtocol?
     /// 左右横屏方向标记（用于旋转按钮切换 landscapeLeft/Right）。
     @State private var isLandscapeLeft = false
-    /// 画中画（PiP）控制器：由全屏 AVPlayerViewController 暴露，供"画中画"按钮程序触发。
-    @State private var pipController: AVPictureInPictureController?
+    #if os(iOS)
+    /// 全屏播放器控制器（用于手动触发画中画，与切后台自动 PiP 同源）。
+    @State private var fullPlayerVC: AVPlayerViewController?
+    #endif
+    /// 听视频模式状态：开启时关闭播放器 allowsPiP，切后台保持纯音频不弹 PiP 小窗。
+    @State private var listenMode = false
     @AppStorage(HawkConfig.PLAY_TYPE_VOD) private var vodPlayTypeRaw = -1
     @AppStorage(HawkConfig.PLAY_TYPE) private var legacyPlayTypeRaw = PlayerEngine.system.rawValue
     
@@ -767,9 +771,11 @@ struct FullScreenPlayerView: View {
                             // 播放控制器真正呈现后按视频方向设置朝向（比 SwiftUI onAppear 更可靠）。
                             applyPlayerOrientation(player: player)
                         },
-                        onPipControllerReady: { controller in
-                            pipController = controller
-                        }
+                        onViewControllerReady: { controller in
+                            fullPlayerVC = controller
+                        },
+                        // 听视频模式下关闭自动 PiP：切后台保持纯音频。
+                        allowsPiP: !listenMode
                     )
                     .ignoresSafeArea()
                 }
@@ -794,7 +800,24 @@ struct FullScreenPlayerView: View {
                     onSelectEpisode: { index in
                         onSelectEpisode?(index)
                     },
-                    pipController: $pipController
+                    onRequestPip: {
+                        #if os(iOS)
+                        // 用播放器自带 PiP 控制器手动触发（与切后台自动 PiP 同源，避免外部控制器冲突）。
+                        if #available(iOS 15.0, *), let c = fullPlayerVC?.avPictureInPictureController {
+                            if c.isPictureInPicturePossible {
+                                c.startPictureInPicture()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                    if c.isPictureInPictureActive {
+                                        closeFullScreen()
+                                    }
+                                }
+                            }
+                        }
+                        #endif
+                    },
+                    onListenModeChanged: { on in
+                        listenMode = on
+                    }
                 )
                 // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
                 .onChange(of: urlString) { _, newURL in
