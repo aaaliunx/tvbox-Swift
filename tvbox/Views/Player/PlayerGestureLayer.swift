@@ -45,16 +45,17 @@ struct PlayerGestureLayer: View {
         let absH = abs(translation.width)
         let absV = abs(translation.height)
 
-        // 水平优先判定（快进快退）
-        if absH > absV && absH > threshold {
+        // 水平优先判定（快进快退）：水平需显著主导（≥1.5倍），
+        // 避免上下滑动略微带斜就被误判为快进。
+        if absH > absV * 1.5 && absH > threshold {
             // 根据滑动距离动态调整快进幅度，短距离精细，长距离快速
             let normalizedOffset = translation.width / containerWidth
             let offset = Double(normalizedOffset) * 120.0 // 滑满屏幕 = 120秒
             return .seeking(offset: offset)
         }
 
-        // 垂直判定：左半区域 = 亮度，右半区域 = 音量
-        if absV > threshold {
+        // 垂直判定：左半区域 = 亮度，右半区域 = 音量（同样需显著主导）
+        if absV > absH * 1.5 && absV > threshold {
             let isLeftHalf = startX < containerWidth / 2
             let delta = -translation.height / 300.0 // 向上为正
             if isLeftHalf {

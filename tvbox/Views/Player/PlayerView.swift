@@ -118,12 +118,13 @@ struct FullScreenGestureLayer: View {
                             if moved > 12 {
                                 // 进入拖动模式：取消长按，之后不再触发倍速。
                                 cancelLongPressTimer()
-                                if absW > absH {
+                                // 水平需显著主导（≥1.5倍）才走快进，上下滑动略微带斜不再误触发。
+                                if absW > absH * 1.5 {
                                     if let onSeek {
                                         let offset = Double(value.translation.width / geometry.size.width) * 180.0
                                         onSeek(offset)
                                     }
-                                } else {
+                                } else if absV > absW * 1.5 {
                                     if dragStartX < geometry.size.width * 0.5 {
                                         onBrightness(value.translation)
                                     } else {

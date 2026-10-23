@@ -29,7 +29,8 @@ class ShortDramaViewModel: ObservableObject {
     
     private let sourceService = SourceService.shared
     
-    /// 聚合加载各源短剧分类第一页内容。
+    /// 串行加载各源短剧分类内容：每个源一返回就立即上屏（渐进式），
+    /// 避免并发等待全部源导致长时间空白。
     func load() async {
         guard !isLoading else { return }
         isLoading = true
@@ -42,31 +43,26 @@ class ShortDramaViewModel: ObservableObject {
             return
         }
         
-        let items = await withTaskGroup(of: [Movie.Video].self) { group in
-            for bean in beans {
-                group.addTask {
-                    // 找该源分类中含"短剧/短片"的分类，拉首页数据。
-                    guard let sorts = try? await SourceService.shared.getSort(sourceBean: bean) else { return [] }
-                    guard let target = sorts.sorts.first(where: { $0.name.contains("短剧") || $0.name.contains("短片") }) else { return [] }
-                    guard let videos = try? await SourceService.shared.getList(
-                        sourceBean: bean,
-                        sortData: target,
-                        page: 1,
-                        filters: nil
-                    ) else { return [] }
-                    return videos
-                }
-            }
-            var all: [Movie.Video] = []
-            for await batch in group {
-                all.append(contentsOf: batch)
-            }
-            return all
-        }
+        errorMessage = nil
+        var seen = Set(videos.map(\.name))
         
-        // 按剧名跨源去重（保留先到的，即高优先级源）。
-        var seen = Set<String>()
-        videos = items.filter { seen.insert($0.name).inserted }
+        for bean in beans {
+            // 找该源分类中含"短剧/短片"的分类，拉首页数据。
+            guard let sorts = try? await SourceService.shared.getSort(sourceBean: bean) else { continue }
+            guard let target = sorts.sorts.first(where: { $0.name.contains("短剧") || $0.name.contains("短片") }) else { continue }
+            guard let list = try? await SourceService.shared.getList(
+                sourceBean: bean,
+                sortData: target,
+                page: 1,
+                filters: nil
+            ) else { continue }
+            
+            // 跨源去重后立即上屏。
+            let fresh = list.filter { seen.insert($0.name).inserted }
+            if !fresh.isEmpty {
+                videos.append(contentsOf: fresh)
+            }
+        }
         
         if videos.isEmpty {
             errorMessage = "短剧源暂无可播放内容，请稍后重试"
@@ -125,7 +121,7 @@ struct ShortDramaView: View {
                 ProgressView()
                     .scaleEffect(1.3)
                     .tint(.orange)
-                Text("正在全网搜索短剧...")
+                Text("正在搜索短剧源...")
                     .font(.subheadline)
                     .foregroundColor(AppTheme.textSecondary)
                     .padding(.top, 10)
