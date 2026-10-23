@@ -17,8 +17,10 @@ struct PlayerLiveActivityWidget: Widget {
             LockScreenView(context: context)
         } dynamicIsland: { context in
             DynamicIsland {
-                // 灵动岛展开态
-                DynamicIslandExpandedView(context: context)
+                // 灵动岛展开态（长按灵动岛时显示）
+                DynamicIslandExpandedRegion(.center) {
+                    DynamicIslandExpandedView(context: context)
+                }
             } compactLeading: {
                 Image(systemName: "play.rectangle.fill")
                     .font(.system(size: 12, weight: .semibold))
