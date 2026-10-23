@@ -243,7 +243,6 @@ final class SmartSkipController: ObservableObject {
         var windowSamples: Int = Int(sampleRate * window)
 
         while let sb = output.copyNextSampleBuffer() {
-            defer { CFRelease(sb) }
             if !haveRate, let fmt = CMSampleBufferGetFormatDescription(sb) {
                 var asbd = AudioStreamBasicDescription()
                 CMAudioFormatDescriptionGetStreamBasicDescription(fmt, &asbd)
@@ -255,9 +254,16 @@ final class SmartSkipController: ObservableObject {
             }
             var ablPtr: UnsafeMutablePointer<AudioBufferList>? = nil
             var sizeNeeded: Int = 0
+            var blockBuffer: CMBlockBuffer? = nil
             let err = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-                kCFAllocatorDefault, sb, &sizeNeeded, &ablPtr, 0,
-                kCFAllocatorDefault, kCFAllocatorDefault, 0)
+                sb,
+                bufferListSizeNeededOut: &sizeNeeded,
+                bufferListOut: &ablPtr,
+                bufferListSize: 0,
+                blockBufferAllocator: kCFAllocatorDefault,
+                blockBufferMemoryAllocator: kCFAllocatorDefault,
+                flags: 0,
+                blockBufferOut: &blockBuffer)
             guard err == noErr, let abl = ablPtr else { continue }
             let bufs = UnsafeMutableAudioBufferListPointer(abl)
             for buf in bufs {

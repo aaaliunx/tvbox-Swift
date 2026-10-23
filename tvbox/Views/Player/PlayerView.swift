@@ -1369,7 +1369,7 @@ struct TencentStylePlayerOverlay: View {
                 if !isLive {
                     SmartSkipController.shared.tick(
                         currentTime: cur,
-                        duration: d,
+                        duration: duration,
                         isPlaying: player.rate > 0,
                         canPlayNext: onAutoSkipOutro != nil
                     ) { target in
