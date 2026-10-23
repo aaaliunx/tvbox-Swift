@@ -57,11 +57,12 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         vc.showsPlaybackControls = false
         // 开启画中画能力（配合 UIBackgroundModes audio，切后台也可自动进入 PiP）。
         vc.allowsPictureInPicturePlayback = true
-        #if swift(>=5.5)
-        if #available(iOS 15.0, *) {
-            context.coordinator.onPipControllerReady?(vc.avPictureInPictureController)
+        // 用传统 AVPictureInPictureController(playerLayer:) 构建 PiP 控制器：
+        // 系统控制条隐藏后需程序触发 PiP，AVPlayerViewController 的 view.layer 即 AVPlayerLayer。
+        if let playerLayer = vc.view.layer as? AVPlayerLayer,
+           AVPictureInPictureController.isPictureInPictureSupported() {
+            context.coordinator.onPipControllerReady?(AVPictureInPictureController(playerLayer: playerLayer))
         }
-        #endif
         // 转场动画（约 0.4s）完成后通知 SwiftUI 侧做方向兜底，
         // 比 SwiftUI onAppear 更可靠（此时控制器已真实呈现在窗口上）。
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
@@ -77,11 +78,10 @@ struct AVPlayerViewControllerRepresentable: UIViewControllerRepresentable {
         uiViewController.showsPlaybackControls = false
         context.coordinator.onViewAppeared = onViewAppeared
         context.coordinator.onPipControllerReady = onPipControllerReady
-        #if swift(>=5.5)
-        if #available(iOS 15.0, *) {
-            context.coordinator.onPipControllerReady?(uiViewController.avPictureInPictureController)
+        if let playerLayer = uiViewController.view.layer as? AVPlayerLayer,
+           AVPictureInPictureController.isPictureInPictureSupported() {
+            context.coordinator.onPipControllerReady?(AVPictureInPictureController(playerLayer: playerLayer))
         }
-        #endif
     }
 }
 

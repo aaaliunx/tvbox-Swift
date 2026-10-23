@@ -1,6 +1,9 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
+#if os(iOS)
+import AVKit
+#endif
 #if os(macOS)
 import AppKit
 #endif
