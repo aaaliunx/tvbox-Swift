@@ -252,17 +252,14 @@ final class SmartSkipController: ObservableObject {
                     haveRate = true
                 }
             }
-            // 直接读取 SampleBuffer 内部的 AudioBufferList（PCM 交错为单 buffer，
-            // 栈上固定容量足够；buffer 生命周期与 sb 一致）。
-            var abl = AudioBufferList()
+            // 拷贝出 AudioBufferList（PCM 交错为单 buffer；返回内存用系统默认分配器，处理完释放）。
+            var ablPtr: UnsafeMutablePointer<AudioBufferList>? = nil
             var sizeNeeded: Int = 0
-            let err = CMSampleBufferGetAudioBufferList(
-                sb,
-                bufferListSizeNeededOut: &sizeNeeded,
-                bufferListOut: &abl,
-                bufferListSize: MemoryLayout<AudioBufferList>.size)
-            guard err == noErr else { continue }
-            let bufs = UnsafeMutableAudioBufferListPointer(&abl)
+            let err = CMSampleBufferCopyAudioBufferList(
+                sb, &sizeNeeded, &ablPtr, 0, kCFAllocatorDefault)
+            guard err == noErr, let abl = ablPtr else { continue }
+            defer { CFAllocatorDeallocate(kCFAllocatorDefault, UnsafeRawPointer(abl)) }
+            let bufs = UnsafeMutableAudioBufferListPointer(abl)
             for buf in bufs {
                 guard let data = buf.mData, buf.mDataByteSize > 0 else { continue }
                 let count = Int(buf.mDataByteSize) / MemoryLayout<Float>.size
