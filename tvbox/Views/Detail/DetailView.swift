@@ -152,6 +152,7 @@ struct DetailView: View {
                 FullScreenPlayerView(
                     urlString: url,
                     title: video.name,
+                    coverURL: video.pic,
                     startPosition: viewModel.currentPlaybackSeconds(),
                     onProgressChanged: handlePlaybackProgress,
                     onPlaybackEnded: playNextEpisodeIfNeeded,
@@ -710,6 +711,8 @@ struct FullScreenPlayerView: View {
     let urlString: String
     /// 播放内容标题（腾讯风格顶部标题栏显示）。
     var title: String = ""
+    /// 剧集封面地址（锁屏/控制中心"正在播放"卡片）。
+    var coverURL: String? = nil
     var startPosition: Double = 0
     var onProgressChanged: ((Double, Double?) -> Void)? = nil
     var onPlaybackEnded: (() -> Void)? = nil
@@ -791,7 +794,7 @@ struct FullScreenPlayerView: View {
                     onClose: { closeFullScreen() },
                     onLongPressBegan: { beginLongPressSpeed(player: systemController?.player) },
                     onLongPressEnded: { endLongPressSpeed(player: systemController?.player) },
-                    coverURL: video.pic,
+                    coverURL: coverURL ?? "",
                     sourceNames: sourceNames,
                     selectedSourceIndex: selectedSourceIndex,
                     onSelectSource: { index in

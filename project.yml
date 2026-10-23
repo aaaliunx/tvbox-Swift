@@ -52,6 +52,28 @@ targets:
         Release:
           SWIFT_OPTIMIZATION_LEVEL: "-O"
 
+  tvboxLiveActivity:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: tvboxLiveActivity
+      # ActivityAttributes 类型与主 App 共享编译，保证两端类型一致。
+      - path: tvbox/PlayerActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: xyz.appinstall.nov.carbon.lam.liveactivity
+        INFOPLIST_FILE: tvboxLiveActivity/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        PRODUCT_NAME: PlayerLiveActivity
+        SWIFT_EMIT_LOC_STRINGS: YES
+        SKIP_INSTALL: YES
+      configs:
+        Debug:
+          SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+
   tvbox-Tests:
     type: bundle.unit-test
     platform: iOS

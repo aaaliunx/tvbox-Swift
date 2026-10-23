@@ -371,6 +371,8 @@ struct TencentStylePlayerOverlay: View {
     var onClose: (() -> Void)? = nil
     var onLongPressBegan: (() -> Void)? = nil
     var onLongPressEnded: (() -> Void)? = nil
+    /// 封面地址（用于锁屏/控制中心"正在播放"卡片与听剧界面展示）。
+    var coverURL: String? = nil
     /// 播放源（线路）名称列表；为空时不显示"线路"按钮。
     var sourceNames: [String] = []
     var selectedSourceIndex: Int = 0
@@ -395,8 +397,6 @@ struct TencentStylePlayerOverlay: View {
     var onRequestPip: (() -> Void)? = nil
     /// 听视频模式状态变化回调（上层据此开关播放器 allowsPiP，避免听剧时切后台弹 PiP 小窗）。
     var onListenModeChanged: ((Bool) -> Void)? = nil
-    /// 封面地址（用于锁屏/控制中心"正在播放"卡片与听剧界面展示）。
-    var coverURL: String? = nil
 
     @State private var controlsVisible = true
     @State private var hideControlsTask: Task<Void, Never>?
@@ -769,6 +769,13 @@ struct TencentStylePlayerOverlay: View {
                 skipForward: { seekBy(10) },
                 skipBackward: { seekBy(-10) }
             )
+            // 启动灵动岛/锁屏 Live Activity（播放期间常驻，切后台可见）。
+            PlayerLiveActivityManager.start(
+                title: title,
+                subtitle: isLive ? "直播" : "听视频模式",
+                coverURL: coverURL ?? "",
+                isLive: isLive
+            )
             // 异步加载封面（用于锁屏"正在播放"卡片与听剧界面）。
             if let coverURL, !coverURL.isEmpty, artworkImage == nil {
                 let urlString = coverURL
@@ -787,6 +794,7 @@ struct TencentStylePlayerOverlay: View {
             osdTimer?.invalidate()
             #if os(iOS)
             NowPlayingManager.shared.clear()
+            PlayerLiveActivityManager.end()
             #endif
         }
     }
@@ -1285,6 +1293,16 @@ struct TencentStylePlayerOverlay: View {
                     currentTime: currentTime,
                     rate: rate,
                     artwork: artworkImage
+                )
+                // 同步灵动岛/锁屏 Live Activity（标题/进度/播放状态）。
+                PlayerLiveActivityManager.update(
+                    title: title,
+                    subtitle: isLive ? "直播" : "听视频模式",
+                    progress: duration > 0 ? currentTime / duration : 0,
+                    currentTime: currentTime,
+                    duration: duration,
+                    isPlaying: player.rate > 0,
+                    isLive: isLive
                 )
                 #endif
             }
