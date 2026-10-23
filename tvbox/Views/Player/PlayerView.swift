@@ -124,7 +124,7 @@ struct FullScreenGestureLayer: View {
                                         let offset = Double(value.translation.width / geometry.size.width) * 180.0
                                         onSeek(offset)
                                     }
-                                } else if absV > absW * 1.5 {
+                                } else if absH > absW * 1.5 {
                                     if dragStartX < geometry.size.width * 0.5 {
                                         onBrightness(value.translation)
                                     } else {
