@@ -291,6 +291,8 @@ struct TencentStylePlayerOverlay: View {
     @State private var isLocked = false
     /// 锁定态单击唤出的"仅锁按钮"浮层（腾讯逻辑：锁定时不显示完整控制栏）。
     @State private var showLockHint = false
+    /// 听视频模式（腾讯"听剧"同款：黑屏纯音频界面，切后台/锁屏继续播放）。
+    @State private var listenMode = false
 
     private static let playbackRates: [Float] = [1.0, 1.25, 1.5, 2.0]
 
@@ -478,6 +480,144 @@ struct TencentStylePlayerOverlay: View {
                             .padding(.bottom, 32)
                         }
                         Spacer()
+                    }
+                }
+                .transition(.opacity)
+            }
+
+            // 听视频模式（腾讯"听剧"同款）：黑屏纯音频界面，覆盖全部控制层；
+            // 播放内核继续运行，配合 UIBackgroundModes audio 切后台/锁屏仍可收听。
+            if listenMode {
+                ZStack {
+                    Color.black.ignoresSafeArea()
+
+                    VStack(spacing: 0) {
+                        // 顶部：返回视频界面 / 模式标识 / 关闭播放器
+                        HStack(spacing: 12) {
+                            Button {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    listenMode = false
+                                    showControls()
+                                }
+                            } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            Spacer()
+
+                            Text("听视频")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.75))
+
+                            Spacer()
+
+                            Button {
+                                onClose?()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, max(Self.safeTopInset(), 8))
+
+                        Spacer()
+
+                        // 中部：音波标识 + 标题
+                        Image(systemName: "waveform")
+                            .font(.system(size: 56, weight: .regular))
+                            .foregroundColor(.white.opacity(0.3))
+                            .padding(.bottom, 24)
+
+                        Text(title)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .padding(.horizontal, 40)
+
+                        Text(isLive ? "直播中，切到后台继续收听" : "后台播放中，锁屏也能继续听")
+                            .font(.system(size: 13))
+                            .foregroundColor(.white.opacity(0.55))
+                            .padding(.top, 10)
+
+                        Spacer()
+
+                        // 底部：进度条（直播无进度）+ 控制按钮
+                        if !isLive {
+                            VStack(spacing: 8) {
+                                Slider(
+                                    value: Binding(
+                                        get: { isDraggingProgress ? draggingSeconds : currentTime },
+                                        set: { draggingSeconds = $0 }
+                                    ),
+                                    in: 0...max(duration, max(currentTime, 1)),
+                                    onEditingChanged: { editing in
+                                        isDraggingProgress = editing
+                                        if !editing {
+                                            seek(to: draggingSeconds)
+                                        }
+                                    }
+                                )
+                                .accentColor(.orange)
+
+                                HStack {
+                                    Text("\(formatTime(currentTime))/\(formatTime(duration))")
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(.white.opacity(0.6))
+                                    Spacer()
+                                }
+                            }
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 12)
+                        }
+
+                        HStack(spacing: 52) {
+                            // 倍速循环切换
+                            Button {
+                                let next = Self.playbackRates.first { $0 > rate } ?? Self.playbackRates.first ?? 1.0
+                                setRate(next)
+                                showOSD("倍速 \(String(format: "%.2g", next))x")
+                            } label: {
+                                Text("\(String(format: "%.2g", rate))x")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 64, height: 40)
+                            }
+                            .buttonStyle(.plain)
+
+                            // 播放/暂停
+                            Button {
+                                onPlayPause?()
+                            } label: {
+                                Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                                    .font(.system(size: 58, weight: .regular))
+                                    .foregroundColor(.white)
+                                    .frame(width: 68, height: 68)
+                            }
+                            .buttonStyle(.plain)
+
+                            // 锁屏开关
+                            Button {
+                                isLocked.toggle()
+                            } label: {
+                                Image(systemName: isLocked ? "lock.fill" : "lock.open")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(isLocked ? .orange : .white)
+                                    .frame(width: 64, height: 40)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.bottom, max(Self.safeBottomInset(), 20) + 16)
                     }
                 }
                 .transition(.opacity)
@@ -732,6 +872,22 @@ struct TencentStylePlayerOverlay: View {
                                     .padding(.vertical, 7)
                                     .background(showRateMenu ? Color.white.opacity(0.25) : Color.white.opacity(0.15))
                                     .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        // 听视频按钮（腾讯"听剧"同款，仅点播；直播无进度概念且本就适合后台收听）
+                        if !isLive {
+                            Button {
+                                showControls()
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    listenMode = true
+                                }
+                            } label: {
+                                Image(systemName: "headphones")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white)
+                                    .frame(width: 34, height: 34)
                             }
                             .buttonStyle(.plain)
                         }

@@ -1,6 +1,9 @@
 import SwiftUI
 import SwiftData
 import Combine
+#if os(iOS)
+import AVFAudio
+#endif
 
 /// 应用入口。
 /// 负责初始化 SwiftData 容器，并将全局状态 `AppState` 注入到根视图。
@@ -10,6 +13,14 @@ struct tvboxApp: App {
     @StateObject private var appState = AppState()
     /// 网络状态监控。
     @StateObject private var networkMonitor = NetworkMonitor.shared
+
+    init() {
+        #if os(iOS)
+        // 听视频模式：声明 playback 会话，允许切后台/锁屏后音频继续播放。
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
+    }
     
     /// 全局共享的 SwiftData 容器。
     /// 这里显式声明 Schema，确保收藏/历史/缓存三类数据使用同一持久化存储。

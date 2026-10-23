@@ -33,13 +33,12 @@ class LiveViewModel: ObservableObject {
     }
     
     /// 选择频道分组
+    /// 注意：仅切换分组列表与高亮，不自动播放组内频道；
+    /// 播放切换由用户点击具体频道触发。
     func selectGroup(_ index: Int) {
         guard index >= 0, index < channelGroups.count else { return }
         selectedGroupIndex = index
         selectedChannelIndex = 0
-        if let first = channelGroups[index].channels.first {
-            selectChannel(first)
-        }
     }
     
     /// 选择频道
