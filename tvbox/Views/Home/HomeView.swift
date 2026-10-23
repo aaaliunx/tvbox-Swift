@@ -288,17 +288,10 @@ struct HomeView: View {
     private var homeFeed: some View {
         ScrollView {
             VStack(spacing: 18) {
-                // 推荐横幅（大图 + 角标）
-                if let banner = viewModel.homeVideos.first, !banner.pic.isEmpty {
-                    bannerCard(banner)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 10)
-                }
-                
-                // 热门推荐横滑
+                // 推荐列表（腾讯视频式：第一板块即推荐横滑，不做拉伸横幅）
                 if !viewModel.homeVideos.isEmpty {
                     homeSection(
-                        title: "热门推荐",
+                        title: "推荐",
                         videos: Array(viewModel.homeVideos.prefix(12))
                     )
                 }
@@ -323,59 +316,6 @@ struct HomeView: View {
         .task {
             await viewModel.loadHomeSections()
         }
-    }
-    
-    /// 推荐横幅（腾讯视频式大图）。
-    private func bannerCard(_ video: Movie.Video) -> some View {
-        NavigationLink(value: video) {
-            ZStack(alignment: .bottomLeading) {
-                CachedAsyncImage(url: URL.posterURL(from: video.pic)) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(16/9, contentMode: .fill)
-                } placeholder: {
-                    RoundedRectangle(cornerRadius: AppTheme.cardRadius)
-                        .fill(AppTheme.divider)
-                        .aspectRatio(16/9, contentMode: .fill)
-                        .overlay(ProgressView().tint(.orange))
-                }
-                .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius))
-                
-                // 底部渐变保护文字
-                LinearGradient(
-                    colors: [.black.opacity(0.7), .clear],
-                    startPoint: .bottom,
-                    endPoint: .center
-                )
-                .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius))
-                
-                VStack(alignment: .leading, spacing: 6) {
-                    // 角标
-                    Text("上新")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color.orange)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                    
-                    Text(video.name)
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                    
-                    if !video.note.isEmpty {
-                        Text(video.note)
-                            .font(.system(size: 12))
-                            .foregroundColor(.white.opacity(0.85))
-                            .lineLimit(1)
-                    }
-                }
-                .padding(12)
-            }
-        }
-        .buttonStyle(VodCardPressStyle())
     }
     
     /// 腾讯视频式分组横滑。
