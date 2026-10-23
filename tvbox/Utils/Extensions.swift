@@ -32,6 +32,10 @@ struct HawkConfig {
     static let M3U8_CLEAN = "m3u8_clean"
     /// 直播播放失败时自动切换线路开关（默认关闭）。
     static let LIVE_AUTO_SWITCH_LINE = "live_auto_switch_line"
+    /// 智能跳过片头开关（自动检测+自动跳过，默认开启）。
+    static let SKIP_INTRO = "skip_intro_enabled"
+    /// 智能跳过片尾开关（自动检测+自动跳下一集，默认开启）。
+    static let SKIP_OUTRO = "skip_outro_enabled"
 }
 
 /// 通用 Swift 扩展

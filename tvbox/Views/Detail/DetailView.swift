@@ -124,6 +124,9 @@ struct DetailView: View {
                     selectedEpisodeIndex: viewModel.selectedEpisodeIndex,
                     onSelectEpisode: { index in
                         viewModel.selectEpisode(index: index)
+                    },
+                    onAutoSkipOutro: {
+                        playNextEpisodeIfNeeded()
                     }
                 )
                 .ignoresSafeArea()
@@ -175,6 +178,9 @@ struct DetailView: View {
                     selectedEpisodeIndex: viewModel.selectedEpisodeIndex,
                     onSelectEpisode: { index in
                         viewModel.selectEpisode(index: index)
+                    },
+                    onAutoSkipOutro: {
+                        playNextEpisodeIfNeeded()
                     }
                 )
             }
@@ -729,6 +735,8 @@ struct FullScreenPlayerView: View {
     var episodeNames: [String] = []
     var selectedEpisodeIndex: Int = 0
     var onSelectEpisode: ((Int) -> Void)? = nil
+    /// 自动跳过片尾时跳下一集的回调（无下一集时由上层忽略）。
+    var onAutoSkipOutro: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     /// 切后台再返回时重新应用播放器朝向。
     @Environment(\.scenePhase) private var scenePhase
@@ -824,6 +832,9 @@ struct FullScreenPlayerView: View {
                     },
                     onListenModeChanged: { on in
                         listenMode = on
+                    },
+                    onAutoSkipOutro: {
+                        onAutoSkipOutro?()
                     }
                 )
                 // 不忽略安全区：标题栏与底部控制栏自动避开灵动岛/Home 指示条。
@@ -849,6 +860,8 @@ struct FullScreenPlayerView: View {
         // 自动旋转开启时转动设备画面实时跟随；锁定方向时同样强制目标朝向。
         .onAppear {
             showControls()
+            // 智能跳过片头片尾：按播放地址加载缓存或触发检测记录
+            SmartSkipController.shared.reset(forKey: urlString)
             bindPlaybackEndObserver()
             // 转场期间多次尝试，确保方向落地。
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {

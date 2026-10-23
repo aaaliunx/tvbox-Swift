@@ -58,6 +58,10 @@ class SettingsViewModel: ObservableObject {
     @Published var m3u8Clean: Bool = false
     /// 直播播放失败时自动切换线路开关（默认关闭，防止正常直播突然换源）。
     @Published var liveAutoSwitchLine: Bool = false
+    /// 智能跳过片头开关（默认开启）。
+    @Published var skipIntro: Bool = true
+    /// 智能跳过片尾开关（默认开启）。
+    @Published var skipOutro: Bool = true
     /// 视频画面渲染缩放。
     @Published var playScale: PlayScaleOption = .original
     /// 缓存占用展示文本。
@@ -137,6 +141,12 @@ class SettingsViewModel: ObservableObject {
         historyLimit = savedHistoryLimit > 0 ? savedHistoryLimit : 20
         m3u8Clean = defaults.bool(forKey: HawkConfig.M3U8_CLEAN)
         liveAutoSwitchLine = defaults.bool(forKey: HawkConfig.LIVE_AUTO_SWITCH_LINE)
+        if defaults.object(forKey: HawkConfig.SKIP_INTRO) != nil {
+            skipIntro = defaults.bool(forKey: HawkConfig.SKIP_INTRO)
+        } else { skipIntro = true }
+        if defaults.object(forKey: HawkConfig.SKIP_OUTRO) != nil {
+            skipOutro = defaults.bool(forKey: HawkConfig.SKIP_OUTRO)
+        } else { skipOutro = true }
         if let rawScale = defaults.string(forKey: HawkConfig.PLAY_SCALE),
            let option = PlayScaleOption(rawValue: rawScale) {
             playScale = option
@@ -222,6 +232,12 @@ class SettingsViewModel: ObservableObject {
         historyLimit = savedHistoryLimit > 0 ? savedHistoryLimit : 20
         m3u8Clean = defaults.bool(forKey: HawkConfig.M3U8_CLEAN)
         liveAutoSwitchLine = defaults.bool(forKey: HawkConfig.LIVE_AUTO_SWITCH_LINE)
+        if defaults.object(forKey: HawkConfig.SKIP_INTRO) != nil {
+            skipIntro = defaults.bool(forKey: HawkConfig.SKIP_INTRO)
+        } else { skipIntro = true }
+        if defaults.object(forKey: HawkConfig.SKIP_OUTRO) != nil {
+            skipOutro = defaults.bool(forKey: HawkConfig.SKIP_OUTRO)
+        } else { skipOutro = true }
         if let rawScale = defaults.string(forKey: HawkConfig.PLAY_SCALE),
            let option = PlayScaleOption(rawValue: rawScale) {
             playScale = option

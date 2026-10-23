@@ -172,6 +172,18 @@ struct SettingsView: View {
                                 UserDefaults.standard.set(viewModel.m3u8Clean, forKey: HawkConfig.M3U8_CLEAN)
                             }
                         }
+                        Divider()
+                        // 智能跳过片头：播放时自动检测片头结束点并记录，自动快进到正片
+                        SettingsRow(icon: "forward.end", title: "自动跳过片头", value: viewModel.skipIntro ? "开启" : "关闭") {
+                            viewModel.skipIntro.toggle()
+                            UserDefaults.standard.set(viewModel.skipIntro, forKey: HawkConfig.SKIP_INTRO)
+                        }
+                        Divider()
+                        // 智能跳过片尾：播放时自动检测片尾开始点并记录，自动跳下一集
+                        SettingsRow(icon: "backward.end", title: "自动跳过片尾", value: viewModel.skipOutro ? "开启" : "关闭") {
+                            viewModel.skipOutro.toggle()
+                            UserDefaults.standard.set(viewModel.skipOutro, forKey: HawkConfig.SKIP_OUTRO)
+                        }
                     }
                     
                     // 功能
