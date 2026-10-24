@@ -222,12 +222,15 @@ final class SmartSkipController: ObservableObject {
         let reader: AVAssetReader
         do { reader = try AVAssetReader(asset: asset) } catch { return nil }
         reader.timeRange = range
+        // 强制输出为 Float32 2声道 44100Hz，后续无需再解析 SampleBuffer 内部格式
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVLinearPCMIsFloatKey: true,
             AVLinearPCMBitDepthKey: 32,
             AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsNonInterleaved: false
+            AVLinearPCMIsNonInterleaved: false,
+            AVNumberOfChannelsKey: 2,
+            AVSampleRateKey: 44100
         ]
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
         output.alwaysCopiesSampleData = false
@@ -236,25 +239,13 @@ final class SmartSkipController: ObservableObject {
         guard reader.startReading() else { return nil }
 
         var rms: [Double] = []
-        var sampleRate: Double = 48000
-        var haveRate = false
+        let sampleRate: Double = 44100
+        let channels = 2
         var acc: Double = 0
         var accCount = 0
-        var windowSamples: Int = Int(sampleRate * window)
+        var windowSamples: Int = max(1, Int(sampleRate * window))
 
         while let sb = output.copyNextSampleBuffer() {
-            var channels = 2
-            if let fmt = CMSampleBufferGetFormatDescription(sb) {
-                var asbd = AudioStreamBasicDescription()
-                CMAudioFormatDescriptionGetStreamBasicDescription(fmt, &asbd)
-                if asbd.mSampleRate > 0 {
-                    sampleRate = Double(asbd.mSampleRate)
-                    haveRate = true
-                }
-                if asbd.mChannelsPerFrame > 0 {
-                    channels = Int(asbd.mChannelsPerFrame)
-                }
-            }
             windowSamples = max(1, Int(sampleRate * window))
             // 用 CMSampleBufferCopyPCMDataIntoAudioBufferList 拷出 PCM（调用者提供缓冲，无需手动释放）。
             let numFrames = CMSampleBufferGetNumSamples(sb)
