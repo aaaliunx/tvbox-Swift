@@ -267,7 +267,7 @@ final class SmartSkipController: ObservableObject {
                 abl.mBuffers.mDataByteSize = UInt32(raw.count)
                 abl.mBuffers.mData = raw.baseAddress
                 return CMSampleBufferCopyPCMDataIntoAudioBufferList(
-                    sbuf: sb, frameOffset: 0, frameCount: Int32(numFrames), bufferList: &abl)
+                    sb, at: 0, frameCount: Int32(numFrames), into: &abl)
             }
             guard err == noErr else { continue }
             for v in samples {
